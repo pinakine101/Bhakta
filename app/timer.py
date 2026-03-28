@@ -3,7 +3,7 @@ import logging
 import os
 from pathlib import Path
 
-from aiogram import Bot
+
 
 # ========== НАСТРОЙКИ ==========
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent

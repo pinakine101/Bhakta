@@ -5,3 +5,4 @@ aiohttp
 aiosqlite
 geopy
 timezonefinder
+pygame
