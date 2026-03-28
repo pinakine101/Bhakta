@@ -3,7 +3,7 @@ import logging
 import os
 from pathlib import Path
 
-from aiogram import Bot
+from telegram import Bot
 
 
 

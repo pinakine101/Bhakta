@@ -4,20 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timezone
 from zoneinfo import ZoneInfo
 
-from aiogram import Bot, Dispatcher, F
-from aiogram.types import (
-    CallbackQuery,
-    FSInputFile,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    InputMediaPhoto,
-    Message,
-    ReplyKeyboardRemove,
-)
+from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, FSInputFile, InputMediaPhoto, ReplyKeyboardRemove
+from telegram.ext import Application, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
 from app.config import Settings
 from app.db.repository import Repository
@@ -41,8 +34,8 @@ from app.services.t2_media import art_image_path, choice_image_path
 def _now_utc_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
+
 def continue_keyboard() -> InlineKeyboardMarkup:
-    # Same callback used in app.main.py
     return InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text="Продолжить", callback_data="tasks:today")]]
     )
@@ -75,6 +68,9 @@ class T2State:
             t.cancel()
 
 
+t2_state = T2State()
+
+
 async def _cancel_timer_safe(t: asyncio.Task | None) -> None:
     if t is None:
         return
@@ -92,14 +88,14 @@ def _art_by_id(tasks: dict, aid: int) -> dict | None:
 
 def _theme_by_id(tasks: dict, tid: int) -> dict | None:
     for t in t2_life_themes_pool(tasks):
-        if int(t["id"]) == int(tid):
+        if int(t["id"]) == tid:
             return t
     return None
 
 
 def _choice_set_by_id(tasks: dict, sid: int) -> dict | None:
     for s in t2_choice_sets_pool(tasks):
-        if int(s["id"]) == int(sid):
+        if int(s["id"]) == sid:
             return s
     return None
 
@@ -119,7 +115,6 @@ def _skip_keyboard(row_id: int, show_skip: bool) -> list[list[InlineKeyboardButt
 
 
 def _t2_show_skip(week_num: int, cal_day: int) -> bool:
-    """Пропуск со 2-й недели или с 8-го дня курса (если week_num в БД ещё 1)."""
     return week_num >= 2 or cal_day >= 8
 
 
@@ -218,283 +213,320 @@ async def _send_t2_open_final(bot: Bot, chat_id: int, row: dict, tasks: dict, sh
     await bot.send_message(chat_id, text, reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
 
 
-def register_t2_handlers(dp: Dispatcher, repo: Repository, settings: Settings, state: T2State) -> None:
-    @dp.callback_query(F.data.startswith("t2:"))
-    async def t2_cb(callback: CallbackQuery) -> None:
-        if not callback.from_user or not callback.message:
-            await callback.answer("Ошибка", show_alert=True)
-            return
-        uid = callback.from_user.id
-        parts = (callback.data or "").split(":")
-        if len(parts) < 3:
-            await callback.answer("Ошибка", show_alert=True)
-            return
-        action = parts[1]
+def register_t2_handlers(app: Application, repo: Repository, settings: Settings, state: T2State) -> None:
+    app.add_handler(CallbackQueryHandler(_t2_callback_o, pattern=re.compile(r"^t2:o:(\d+)$")))
+    app.add_handler(CallbackQueryHandler(_t2_callback_sk, pattern=re.compile(r"^t2:sk:(\d+)$")))
+    app.add_handler(CallbackQueryHandler(_t2_callback_s, pattern=re.compile(r"^t2:s:(\d+)$")))
+    app.add_handler(CallbackQueryHandler(_t2_callback_d, pattern=re.compile(r"^t2:d:(\d+)$")))
+    app.add_handler(CallbackQueryHandler(_t2_callback_ld, pattern=re.compile(r"^t2:ld:(\d+)$")))
+    app.add_handler(CallbackQueryHandler(_t2_callback_fd, pattern=re.compile(r"^t2:fd:(\d+)$")))
+    app.add_handler(CallbackQueryHandler(_t2_callback_c, pattern=re.compile(r"^t2:c:(\d+):(\d+)$")))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _t2_text_flow))
 
-        if action == "c" and len(parts) >= 4:
-            try:
-                row_id = int(parts[2])
-                idx = int(parts[3])
-            except ValueError:
-                await callback.answer("Ошибка", show_alert=True)
-                return
-        else:
-            try:
-                row_id = int(parts[2])
-            except ValueError:
-                await callback.answer("Ошибка", show_alert=True)
-                return
-            idx = -1
 
-        row = await repo.get_scheduled_task_by_id(row_id)
-        if not row or row["user_id"] != uid or row["task_type"] != "T2":
-            await callback.answer("Задание не найдено", show_alert=True)
-            return
-        if row["completed"] or row["skipped"]:
-            await callback.answer("Уже обработано")
-            return
+async def _t2_base(update: Update, row_id: int) -> tuple[int, dict | None]:
+    query = update.callback_query
+    uid = update.effective_user.id
+    data = query.data or ""
+    parts = data.split(":")
+    if len(parts) < 3:
+        await query.answer("Ошибка", show_alert=True)
+        return uid, None
+    try:
+        row_id = int(parts[2])
+    except ValueError:
+        await query.answer("Ошибка", show_alert=True)
+        return uid, None
+    row = await repo.get_scheduled_task_by_id(row_id)
+    if not row or row["user_id"] != uid or row["task_type"] != "T2":
+        await query.answer("Задание не найдено", show_alert=True)
+        return uid, None
+    if row["completed"] or row["skipped"]:
+        await query.answer("Уже обработано")
+        return uid, None
+    return uid, row
 
-        urow = await repo.get_user_row_for_t1(uid)
-        week_num = int((urow or {}).get("week_num") or 1)
-        tasks = get_tasks()
-        try:
-            td = date.fromisoformat(str(row["task_date"]))
-            csd = (urow or {}).get("course_start_date")
-            cal_d = course_calendar_day(date.fromisoformat(str(csd)), td) if csd else 1
-        except ValueError:
-            cal_d = 1
-        show_skip = _t2_show_skip(week_num, cal_d)
 
-        if action == "o":
-            if not _within_window_utc(row["window_end"]):
-                await callback.answer("Окно задания закончилось — задание удалено.", show_alert=True)
-                return
-            st = row.get("t2_subtype") or ""
-            chat_id = callback.message.chat.id
-            if st == "art":
-                await _send_t2_open_art(callback.bot, chat_id, row, tasks, show_skip)
-            elif st == "life_theme":
-                await _send_t2_open_life(callback.bot, chat_id, row, tasks, show_skip)
-            elif st == "choice":
-                await _send_t2_open_choice(callback.bot, chat_id, row, tasks, show_skip)
-            elif st == "final":
-                await _send_t2_open_final(callback.bot, chat_id, row, tasks, show_skip)
-            else:
-                await callback.answer("Неизвестный тип", show_alert=True)
-                return
-            await callback.answer()
-            return
+async def _t2_get_skip(row: dict, uid: int) -> bool:
+    urow = await repo.get_user_row_for_t1(uid)
+    week_num = int((urow or {}).get("week_num") or 1)
+    try:
+        td = date.fromisoformat(str(row["task_date"]))
+        csd = (urow or {}).get("course_start_date")
+        cal_d = course_calendar_day(date.fromisoformat(str(csd)), td) if csd else 1
+    except ValueError:
+        cal_d = 1
+    return _t2_show_skip(week_num, cal_d)
 
-        if action == "sk":
-            if not show_skip:
-                await callback.answer("Пропуск со 2-й недели курса", show_alert=True)
-                return
-            await _cancel_timer_safe(state.art_timers.pop(uid, None))
-            state.art_session.pop(uid, None)
-            state.pending.pop(uid, None)
-            await repo.skip_scheduled_task(row_id, _now_utc_iso())
-            await callback.message.answer("Задание пропущено.", reply_markup=continue_keyboard())
-            await callback.answer()
-            return
 
-        if action == "s":
-            if row.get("t2_subtype") != "art":
-                await callback.answer("Ошибка", show_alert=True)
-                return
-            if not _within_window_utc(row["window_end"]):
-                await callback.answer("Окно задания закончилось — задание удалено.", show_alert=True)
-                return
-            art = _art_by_id(tasks, int(row["task_id"]))
-            dm = int((art or {}).get("duration_min") or 2)
-            await _cancel_timer_safe(state.art_timers.pop(uid, None))
-            total_sec = dm * 60
-            state.art_session[uid] = (row_id, datetime.now(timezone.utc))
-            state.art_timers[uid] = asyncio.create_task(
-                start_task_timer(
-                    chat_id=callback.message.chat.id,
-                    bot=callback.bot,
-                    duration_seconds=total_sec,
-                    task_name=f"T2 #{row_id}",
-                    notify_countdown=False,
-                    send_start_message=False,
-                )
-            )
-            mm, ss = divmod(total_sec, 60)
-            await callback.message.answer(
-                f"<i>⏱ Таймер: {mm:02d}:{ss:02d}</i>",
-                parse_mode="HTML",
-            )
-            await callback.answer("Таймер запущен")
-            return
+async def _t2_callback_o(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    match = re.match(r"^t2:o:(\d+)$", query.data or "")
+    if not match:
+        return
+    row_id = int(match.group(1))
+    uid, row = await _t2_base(update, row_id)
+    if row is None:
+        return
+    if not _within_window_utc(row["window_end"]):
+        await query.answer("Окно задания закончилось — задание удалено.", show_alert=True)
+        return
+    st = row.get("t2_subtype") or ""
+    chat_id = query.message.chat.id
+    tasks = get_tasks()
+    show_skip = await _t2_get_skip(row, uid)
+    if st == "art":
+        await _send_t2_open_art(query.bot, chat_id, row, tasks, show_skip)
+    elif st == "life_theme":
+        await _send_t2_open_life(query.bot, chat_id, row, tasks, show_skip)
+    elif st == "choice":
+        await _send_t2_open_choice(query.bot, chat_id, row, tasks, show_skip)
+    elif st == "final":
+        await _send_t2_open_final(query.bot, chat_id, row, tasks, show_skip)
+    else:
+        await query.answer("Неизвестный тип", show_alert=True)
+        return
+    await query.answer()
 
-        if action == "d":
-            if row.get("t2_subtype") != "art":
-                await callback.answer("Ошибка", show_alert=True)
-                return
-            ctx = state.art_session.pop(uid, None)
-            await _cancel_timer_safe(state.art_timers.pop(uid, None))
-            if not ctx or ctx[0] != row_id:
-                await callback.answer("Сначала нажми «Начать»", show_alert=True)
-                return
-            play_sound(DONE_SOUND)
-            actual = int((datetime.now(timezone.utc) - ctx[1]).total_seconds())
-            if actual < 0:
-                actual = 0
-            state.pending[uid] = T2Pending(row_id=row_id, step="art_sents", art_seconds=actual)
-            await callback.message.answer(
-                "Напиши 2–3 предложения о том, что чувствуешь, что заметил.",
-                reply_markup=ReplyKeyboardRemove(),
-            )
-            await callback.answer()
-            return
 
-        if action == "ld":
-            if row.get("t2_subtype") != "life_theme":
-                await callback.answer("Ошибка", show_alert=True)
-                return
-            if not _within_window_utc(row["window_end"]):
-                await callback.answer("Окно задания закончилось — задание удалено.", show_alert=True)
-                return
-            play_sound(DONE_SOUND)
-            state.pending[uid] = T2Pending(row_id=row_id, step="life_text")
-            await callback.message.answer("Напиши свои размышления.", reply_markup=ReplyKeyboardRemove())
-            await callback.answer()
-            return
+async def _t2_callback_sk(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    match = re.match(r"^t2:sk:(\d+)$", query.data or "")
+    if not match:
+        return
+    row_id = int(match.group(1))
+    uid, row = await _t2_base(update, row_id)
+    if row is None:
+        return
+    show_skip = await _t2_get_skip(row, uid)
+    if not show_skip:
+        await query.answer("Пропуск со 2-й недели курса", show_alert=True)
+        return
+    await _cancel_timer_safe(t2_state.art_timers.pop(uid, None))
+    t2_state.art_session.pop(uid, None)
+    t2_state.pending.pop(uid, None)
+    await repo.skip_scheduled_task(row_id, _now_utc_iso())
+    await query.message.reply_text("Задание пропущено.", reply_markup=continue_keyboard())
+    await query.answer()
 
-        if action == "fd":
-            if row.get("t2_subtype") != "final":
-                await callback.answer("Ошибка", show_alert=True)
-                return
-            if not _within_window_utc(row["window_end"]):
-                await callback.answer("Окно задания закончилось — задание удалено.", show_alert=True)
-                return
-            play_sound(DONE_SOUND)
-            state.pending[uid] = T2Pending(row_id=row_id, step="final_word")
-            await callback.message.answer("Напиши одно слово.", reply_markup=ReplyKeyboardRemove())
-            await callback.answer()
-            return
 
-        if action == "c":
-            if row.get("t2_subtype") != "choice":
-                await callback.answer("Ошибка", show_alert=True)
-                return
-            if not _within_window_utc(row["window_end"]):
-                await callback.answer("Окно задания закончилось — задание удалено.", show_alert=True)
-                return
-            cs = _choice_set_by_id(tasks, int(row["task_id"]))
-            ids = [int(x) for x in (cs or {}).get("image_ids", [])][:4]
-            if idx < 0 or idx >= len(ids):
-                await callback.answer("Неверный выбор", show_alert=True)
-                return
-            sel_id = ids[idx]
-            state.pending[uid] = T2Pending(
-                row_id=row_id, step="choice_word", selected_image_id=sel_id
-            )
-            await callback.message.answer(
-                "Напиши слово — почему выбрал это изображение (или что откликнулось).",
-                reply_markup=ReplyKeyboardRemove(),
-            )
-            await callback.answer()
-            return
+async def _t2_callback_s(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    match = re.match(r"^t2:s:(\d+)$", query.data or "")
+    if not match:
+        return
+    row_id = int(match.group(1))
+    uid, row = await _t2_base(update, row_id)
+    if row is None:
+        return
+    if row.get("t2_subtype") != "art":
+        await query.answer("Ошибка", show_alert=True)
+        return
+    if not _within_window_utc(row["window_end"]):
+        await query.answer("Окно задания закончилось — задание удалено.", show_alert=True)
+        return
+    tasks = get_tasks()
+    art = _art_by_id(tasks, int(row["task_id"]))
+    dm = int((art or {}).get("duration_min") or 2)
+    await _cancel_timer_safe(t2_state.art_timers.pop(uid, None))
+    total_sec = dm * 60
+    t2_state.art_session[uid] = (row_id, datetime.now(timezone.utc))
+    t2_state.art_timers[uid] = asyncio.create_task(
+        start_task_timer(
+            chat_id=query.message.chat.id,
+            bot=query.bot,
+            duration_seconds=total_sec,
+            task_name=f"T2 #{row_id}",
+            notify_countdown=False,
+            send_start_message=False,
+        )
+    )
+    mm, ss = divmod(total_sec, 60)
+    await query.message.reply_text(f"<i>⏱ Таймер: {mm:02d}:{ss:02d}</i>", parse_mode="HTML")
+    await query.answer("Таймер запущен")
 
-        await callback.answer("Неизвестное действие", show_alert=True)
 
-    @dp.message(lambda m: m.from_user is not None and m.from_user.id in state.pending, F.text)
-    async def t2_text_flow(message: Message) -> None:
-        uid = message.from_user.id
-        pend = state.pending.get(uid)
-        if not pend:
-            return
-        raw = (message.text or "").strip()
-        if raw.startswith("/"):
-            await message.answer("Заверши шаг или используй /stop.")
-            return
-        row = await repo.get_scheduled_task_by_id(pend.row_id)
-        if not row or row["user_id"] != uid or row["completed"]:
-            state.pending.pop(uid, None)
-            return
+async def _t2_callback_d(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    match = re.match(r"^t2:d:(\d+)$", query.data or "")
+    if not match:
+        return
+    row_id = int(match.group(1))
+    uid, row = await _t2_base(update, row_id)
+    if row is None:
+        return
+    if row.get("t2_subtype") != "art":
+        await query.answer("Ошибка", show_alert=True)
+        return
+    ctx = t2_state.art_session.pop(uid, None)
+    await _cancel_timer_safe(t2_state.art_timers.pop(uid, None))
+    if not ctx or ctx[0] != row_id:
+        await query.answer("Сначала нажми «Начать»", show_alert=True)
+        return
+    play_sound(DONE_SOUND)
+    actual = int((datetime.now(timezone.utc) - ctx[1]).total_seconds())
+    if actual < 0:
+        actual = 0
+    t2_state.pending[uid] = T2Pending(row_id=row_id, step="art_sents", art_seconds=actual)
+    await query.message.reply_text("Напиши 2–3 предложения о том, что чувствуешь, что заметил.", reply_markup=ReplyKeyboardRemove())
+    await query.answer()
 
-        urow = await repo.get_user_row_for_t1(uid)
-        ag = (urow or {}).get("age_group")
-        lib_task_id = str(int(row["task_id"])) if row.get("task_id") is not None else "0"
-        now_s = datetime.now().isoformat(sep=" ", timespec="seconds")
 
-        if pend.step == "art_sents":
-            if len(raw) < 15:
-                await message.answer("Напиши чуть развёрнутее (хотя бы пара предложений).")
-                return
-            pend.response_draft = raw
-            pend.step = "art_word"
-            await message.answer("Напиши одно слово — итог.")
-            return
+async def _t2_callback_ld(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    match = re.match(r"^t2:ld:(\d+)$", query.data or "")
+    if not match:
+        return
+    row_id = int(match.group(1))
+    uid, row = await _t2_base(update, row_id)
+    if row is None:
+        return
+    if row.get("t2_subtype") != "life_theme":
+        await query.answer("Ошибка", show_alert=True)
+        return
+    if not _within_window_utc(row["window_end"]):
+        await query.answer("Окно задания закончилось — задание удалено.", show_alert=True)
+        return
+    play_sound(DONE_SOUND)
+    t2_state.pending[uid] = T2Pending(row_id=row_id, step="life_text")
+    await query.message.reply_text("Напиши свои размышления.", reply_markup=ReplyKeyboardRemove())
+    await query.answer()
 
-        if pend.step == "art_word":
-            if not pend.response_draft or len(raw) > 50 or " " in raw.strip():
-                await message.answer("Одно слово, до 50 символов.")
-                return
-            actual = pend.art_seconds or 0
-            await repo.complete_t2_task(
-                pend.row_id,
-                word=raw,
-                response=pend.response_draft,
-                completed_at=now_s,
-                actual_duration_sec=actual,
-                selected_image_id=None,
-            )
-            await repo.save_user_word(uid, raw, "T2", lib_task_id, ag)
-            state.pending.pop(uid, None)
-            await message.answer("Ваши данные внесены", reply_markup=continue_keyboard())
-            return
 
-        if pend.step == "life_text":
-            if len(raw) < 20:
-                await message.answer("Напиши несколько предложений (3–5).")
-                return
-            pend.response_draft = raw
-            pend.step = "life_word"
-            await message.answer("Напиши одно слово — чувство или итог.")
-            return
+async def _t2_callback_fd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    match = re.match(r"^t2:fd:(\d+)$", query.data or "")
+    if not match:
+        return
+    row_id = int(match.group(1))
+    uid, row = await _t2_base(update, row_id)
+    if row is None:
+        return
+    if row.get("t2_subtype") != "final":
+        await query.answer("Ошибка", show_alert=True)
+        return
+    if not _within_window_utc(row["window_end"]):
+        await query.answer("Окно задания закончилось — задание удалено.", show_alert=True)
+        return
+    play_sound(DONE_SOUND)
+    t2_state.pending[uid] = T2Pending(row_id=row_id, step="final_word")
+    await query.message.reply_text("Напиши одно слово.", reply_markup=ReplyKeyboardRemove())
+    await query.answer()
 
-        if pend.step == "life_word":
-            if not pend.response_draft or len(raw) > 50 or " " in raw.strip():
-                await message.answer("Одно слово, до 50 символов.")
-                return
-            await repo.complete_t2_task(
-                pend.row_id,
-                word=raw,
-                response=pend.response_draft,
-                completed_at=now_s,
-            )
-            await repo.save_user_word(uid, raw, "T2", lib_task_id, ag)
-            state.pending.pop(uid, None)
-            await message.answer("Ваши данные внесены", reply_markup=continue_keyboard())
-            return
 
-        if pend.step == "choice_word":
-            if len(raw) > 80:
-                await message.answer("Короче, одно слово или короткая фраза.")
-                return
-            await repo.complete_t2_task(
-                pend.row_id,
-                word=raw,
-                response=None,
-                completed_at=now_s,
-                selected_image_id=pend.selected_image_id,
-            )
-            await repo.save_user_word(uid, raw, "T2", lib_task_id, ag)
-            state.pending.pop(uid, None)
-            await message.answer("Ваши данные внесены", reply_markup=continue_keyboard())
-            return
+async def _t2_callback_c(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    match = re.match(r"^t2:c:(\d+):(\d+)$", query.data or "")
+    if not match:
+        return
+    row_id = int(match.group(1))
+    idx = int(match.group(2))
+    uid, row = await _t2_base(update, row_id)
+    if row is None:
+        return
+    if row.get("t2_subtype") != "choice":
+        await query.answer("Ошибка", show_alert=True)
+        return
+    if not _within_window_utc(row["window_end"]):
+        await query.answer("Окно задания закончилось — задание удалено.", show_alert=True)
+        return
+    tasks = get_tasks()
+    cs = _choice_set_by_id(tasks, int(row["task_id"]))
+    ids = [int(x) for x in (cs or {}).get("image_ids", [])][:4]
+    if idx < 0 or idx >= len(ids):
+        await query.answer("Неверный выбор", show_alert=True)
+        return
+    sel_id = ids[idx]
+    t2_state.pending[uid] = T2Pending(row_id=row_id, step="choice_word", selected_image_id=sel_id)
+    await query.message.reply_text("Напиши слово — почему выбрал это изображение (или что откликнулось).", reply_markup=ReplyKeyboardRemove())
+    await query.answer()
 
-        if pend.step == "final_word":
-            if len(raw) > 50 or " " in raw.strip():
-                await message.answer("Одно слово.")
-                return
-            await repo.complete_t2_task(pend.row_id, word=raw, response=None, completed_at=now_s)
-            await repo.save_user_word(uid, raw, "T2", lib_task_id, ag)
-            state.pending.pop(uid, None)
-            await message.answer("Ваши данные внесены", reply_markup=continue_keyboard())
+
+async def _t2_text_flow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    uid = update.effective_user.id
+    message = update.message
+    pend = t2_state.pending.get(uid)
+    if not pend:
+        return
+    raw = (message.text or "").strip()
+    if raw.startswith("/"):
+        await message.answer("Заверши шаг или используй /stop.")
+        return
+    row = await repo.get_scheduled_task_by_id(pend.row_id)
+    if not row or row["user_id"] != uid or row["completed"]:
+        t2_state.pending.pop(uid, None)
+        return
+    urow = await repo.get_user_row_for_t1(uid)
+    ag = (urow or {}).get("age_group")
+    lib_task_id = str(int(row["task_id"])) if row.get("task_id") is not None else "0"
+    now_s = datetime.now().isoformat(sep=" ", timespec="seconds")
+
+    if pend.step == "art_sents":
+        if len(raw) < 15:
+            await message.answer("Напиши чуть развёрнутее (хотя бы пара предложений).")
             return
+        pend.response_draft = raw
+        pend.step = "art_word"
+        await message.answer("Напиши одно слово — итог.")
+        return
+
+    if pend.step == "art_word":
+        if not pend.response_draft or len(raw) > 50 or " " in raw.strip():
+            await message.answer("Одно слово, до 50 символов.")
+            return
+        actual = pend.art_seconds or 0
+        await repo.complete_t2_task(
+            pend.row_id, word=raw, response=pend.response_draft,
+            completed_at=now_s, actual_duration_sec=actual, selected_image_id=None,
+        )
+        await repo.save_user_word(uid, raw, "T2", lib_task_id, ag)
+        t2_state.pending.pop(uid, None)
+        await message.answer("Ваши данные внесены", reply_markup=continue_keyboard())
+        return
+
+    if pend.step == "life_text":
+        if len(raw) < 20:
+            await message.answer("Напиши несколько предложений (3–5).")
+            return
+        pend.response_draft = raw
+        pend.step = "life_word"
+        await message.answer("Напиши одно слово — чувство или итог.")
+        return
+
+    if pend.step == "life_word":
+        if not pend.response_draft or len(raw) > 50 or " " in raw.strip():
+            await message.answer("Одно слово, до 50 символов.")
+            return
+        await repo.complete_t2_task(
+            pend.row_id, word=raw, response=pend.response_draft, completed_at=now_s,
+        )
+        await repo.save_user_word(uid, raw, "T2", lib_task_id, ag)
+        t2_state.pending.pop(uid, None)
+        await message.answer("Ваши данные внесены", reply_markup=continue_keyboard())
+        return
+
+    if pend.step == "choice_word":
+        if len(raw) > 80:
+            await message.answer("Короче, одно слово или короткая фраза.")
+            return
+        await repo.complete_t2_task(
+            pend.row_id, word=raw, response=None,
+            completed_at=now_s, selected_image_id=pend.selected_image_id,
+        )
+        await repo.save_user_word(uid, raw, "T2", lib_task_id, ag)
+        t2_state.pending.pop(uid, None)
+        await message.answer("Ваши данные внесены", reply_markup=continue_keyboard())
+        return
+
+    if pend.step == "final_word":
+        if len(raw) > 50 or " " in raw.strip():
+            await message.answer("Одно слово.")
+            return
+        await repo.complete_t2_task(pend.row_id, word=raw, response=None, completed_at=now_s)
+        await repo.save_user_word(uid, raw, "T2", lib_task_id, ag)
+        t2_state.pending.pop(uid, None)
+        await message.answer("Ваши данные внесены", reply_markup=continue_keyboard())
+        return
 
 
 async def deliver_t2_slot(
