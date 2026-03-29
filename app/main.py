@@ -575,11 +575,14 @@ def main() -> None:
         raise RuntimeError(
             "No webhook URL found. Set RENDER_EXTERNAL_URL, DEPLOY_URL, or WEBHOOK_URL env var."
         )
+    full_url = f"https://{webhook_url}/webhook"
+    print(f"[BOOT] webhook_url env vars: RENDER_EXTERNAL_URL={os.environ.get('RENDER_EXTERNAL_URL')!r}, DEPLOY_URL={os.environ.get('DEPLOY_URL')!r}, WEBHOOK_URL={os.environ.get('WEBHOOK_URL')!r}")
+    print(f"[BOOT] Starting webhook on {full_url}")
     port = int(os.environ.get("PORT", 8080))
     application.run_webhook(
         listen="0.0.0.0",
         port=port,
-        webhook_url=f"https://{webhook_url}/webhook",
+        webhook_url=full_url,
         secret_token=os.environ.get("WEBHOOK_SECRET"),
     )
 
