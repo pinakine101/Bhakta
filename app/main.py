@@ -570,12 +570,16 @@ def main() -> None:
     asyncio.set_event_loop(loop)
     loop.create_task(t1_background_loop(application.bot, repo, settings))
 
-    # Запуск вебхука (для Render)
+    webhook_url = os.environ.get("RENDER_EXTERNAL_URL") or os.environ.get("DEPLOY_URL") or os.environ.get("WEBHOOK_URL")
+    if not webhook_url:
+        raise RuntimeError(
+            "No webhook URL found. Set RENDER_EXTERNAL_URL, DEPLOY_URL, or WEBHOOK_URL env var."
+        )
     port = int(os.environ.get("PORT", 8080))
     application.run_webhook(
         listen="0.0.0.0",
         port=port,
-        webhook_url=f"https://{os.environ.get('RENDER_EXTERNAL_URL')}/webhook",
+        webhook_url=f"https://{webhook_url}/webhook",
         secret_token=os.environ.get("WEBHOOK_SECRET"),
     )
 
