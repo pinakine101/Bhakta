@@ -11,7 +11,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, FSInputFile, ReplyKeyboardRemove
+from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Application, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
 from app.config import Settings
@@ -70,7 +70,7 @@ _T1_IMAGE_PATH = Path(__file__).resolve().parent.parent / "images" / "Cont_1.jpg
 async def _send_t1_image_if_exists(bot: Bot, chat_id: int) -> None:
     if _T1_IMAGE_PATH.is_file():
         with contextlib.suppress(Exception):
-            await bot.send_photo(chat_id, FSInputFile(_T1_IMAGE_PATH))
+            await bot.send_photo(chat_id, _T1_IMAGE_PATH)
 
 
 def _now_utc_iso() -> str:

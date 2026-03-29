@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, time, timezone
 from zoneinfo import ZoneInfo
 
-from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, FSInputFile, InputMediaPhoto, ReplyKeyboardRemove
+from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, ReplyKeyboardRemove
 from telegram.ext import Application, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
 from app.config import Settings
@@ -133,7 +133,7 @@ async def _send_t2_open_art(
     path = art_image_path(int(art["id"]))
     cap = "Изображение:"
     if path.is_file():
-        await bot.send_photo(chat_id, FSInputFile(path), caption=cap)
+        await bot.send_photo(chat_id, path, caption=cap)
     else:
         await bot.send_message(
             chat_id,
@@ -185,7 +185,7 @@ async def _send_t2_open_choice(bot: Bot, chat_id: int, row: dict, tasks: dict, s
         p = choice_image_path(int(row["task_id"]), img_id)
         cap = f"Вариант {i + 1}"
         if p.is_file():
-            media.append(InputMediaPhoto(media=FSInputFile(p), caption=cap))
+            media.append(InputMediaPhoto(media=str(p), caption=cap))
         else:
             art = _art_by_id(tasks, img_id)
             desc = _art_caption(art) if art else str(img_id)
