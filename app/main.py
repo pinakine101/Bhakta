@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import sys
 from dataclasses import dataclass
 from datetime import date, datetime
 from enum import Enum
@@ -556,11 +557,11 @@ async def on_startup(app: web.Application) -> None:
     if not webhook_url_env:
         raise RuntimeError("RENDER_EXTERNAL_URL or WEBHOOK_URL env var is not set")
     webhook_url = f"{webhook_url_env.rstrip('/')}/webhook"
-    print(f"[BOOT] Setting webhook to {webhook_url}")
+    print(f"[BOOT] Setting webhook to {webhook_url}", flush=True, file=sys.stderr)
     if application:
         await application.bot.set_webhook(webhook_url)
         background_task = asyncio.create_task(t1_background_loop(application.bot, repo, settings))
-        print("[BOOT] Background task started")
+        print("[BOOT] Background task started", flush=True, file=sys.stderr)
 
 
 async def on_shutdown(app: web.Application) -> None:
@@ -613,7 +614,7 @@ def main() -> None:
     app.on_startup.append(on_startup)
     app.on_shutdown.append(on_shutdown)
 
-    print(f"[BOOT] Starting server on 0.0.0.0:{port}")
+    print(f"[BOOT] Starting server on 0.0.0.0:{port}", flush=True, file=sys.stderr)
     web.run_app(app, host="0.0.0.0", port=port, print=None)
 
 
