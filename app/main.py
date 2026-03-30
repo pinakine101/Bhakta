@@ -577,16 +577,12 @@ async def on_shutdown(app: web.Application) -> None:
 
 
 def main() -> None:
-    asyncio.run(_main_async())
-
-
-async def _main_async() -> None:
-    global repo, application, background_task
+    global repo, application
 
     settings = get_settings()
-    await init_db(DB_PATH)
+    asyncio.run(init_db(DB_PATH))
     repo = Repository(DB_PATH)
-    await repo.seed_word_dictionary(build_default_word_dict_rows())
+    asyncio.run(repo.seed_word_dictionary(build_default_word_dict_rows()))
 
     application = Application.builder().token(settings.bot_token).build()
 
@@ -624,6 +620,12 @@ async def _main_async() -> None:
         web.run_app(app, host="0.0.0.0", port=port, print=None)
     else:
         print("[BOOT] Starting in polling mode (local dev)", flush=True, file=sys.stderr)
+        asyncio.run(_run_polling())
+
+
+async def _run_polling() -> None:
+    global background_task
+    if application:
         await application.initialize()
         background_task = asyncio.create_task(t1_background_loop(application.bot, repo, settings))
         print("[BOOT] Background task started", flush=True, file=sys.stderr)
