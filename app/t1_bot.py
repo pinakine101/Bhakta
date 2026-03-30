@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hashlib
+import sys
 import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
@@ -152,6 +153,7 @@ _t1_pending_map: dict[int, dict[int, int | dict]] = {}
 
 async def _t1_callback_t1(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
+    print(f"[T1_CB] data={query.data}", flush=True, file=sys.stderr)
     match = re.match(r"^t1:mo:(\d+)$", query.data or "")
     if not match:
         return

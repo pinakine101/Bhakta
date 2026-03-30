@@ -562,25 +562,6 @@ async def health(request: web.Request) -> web.Response:
 async def on_startup(app: web.Application) -> None:
     global background_task
     webhook_url_env = os.environ.get("RENDER_EXTERNAL_URL") or os.environ.get("WEBHOOK_URL")
-    print(f"[BOOT] on_startup called, webhook_url_env={webhook_url_env}", flush=True, file=sys.stderr)
-    print(f"[BOOT] application={application}", flush=True, file=sys.stderr)
-    if webhook_url_env:
-        webhook_url = f"{webhook_url_env.rstrip('/')}/webhook"
-        print(f"[BOOT] Setting webhook to {webhook_url}", flush=True, file=sys.stderr)
-        if application:
-            try:
-                result = await application.bot.set_webhook(webhook_url)
-                print(f"[BOOT] set_webhook result: {result}", flush=True, file=sys.stderr)
-            except Exception as e:
-                print(f"[BOOT] set_webhook ERROR: {e}", flush=True, file=sys.stderr)
-    if application:
-        background_task = asyncio.create_task(t1_background_loop(application.bot, repo, settings))
-        print("[BOOT] Background task started", flush=True, file=sys.stderr)
-
-
-async def on_startup(app: web.Application) -> None:
-    global background_task
-    webhook_url_env = os.environ.get("RENDER_EXTERNAL_URL") or os.environ.get("WEBHOOK_URL")
     if webhook_url_env:
         webhook_url = f"{webhook_url_env.rstrip('/')}/webhook"
         print(f"[BOOT] Setting webhook to {webhook_url}", flush=True, file=sys.stderr)
