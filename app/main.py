@@ -554,12 +554,12 @@ async def health(request: web.Request) -> web.Response:
 async def on_startup(app: web.Application) -> None:
     global background_task
     webhook_url_env = os.environ.get("RENDER_EXTERNAL_URL") or os.environ.get("WEBHOOK_URL")
-    if not webhook_url_env:
-        raise RuntimeError("RENDER_EXTERNAL_URL or WEBHOOK_URL env var is not set")
-    webhook_url = f"{webhook_url_env.rstrip('/')}/webhook"
-    print(f"[BOOT] Setting webhook to {webhook_url}", flush=True, file=sys.stderr)
+    if webhook_url_env:
+        webhook_url = f"{webhook_url_env.rstrip('/')}/webhook"
+        print(f"[BOOT] Setting webhook to {webhook_url}", flush=True, file=sys.stderr)
+        if application:
+            await application.bot.set_webhook(webhook_url)
     if application:
-        await application.bot.set_webhook(webhook_url)
         background_task = asyncio.create_task(t1_background_loop(application.bot, repo, settings))
         print("[BOOT] Background task started", flush=True, file=sys.stderr)
 
@@ -577,12 +577,16 @@ async def on_shutdown(app: web.Application) -> None:
 
 
 def main() -> None:
-    global repo, application
+    asyncio.run(_main_async())
+
+
+async def _main_async() -> None:
+    global repo, application, background_task
 
     settings = get_settings()
-    asyncio.run(init_db(DB_PATH))
+    await init_db(DB_PATH)
     repo = Repository(DB_PATH)
-    asyncio.run(repo.seed_word_dictionary(build_default_word_dict_rows()))
+    await repo.seed_word_dictionary(build_default_word_dict_rows())
 
     application = Application.builder().token(settings.bot_token).build()
 
@@ -607,15 +611,32 @@ def main() -> None:
     register_t1_handlers(application, repo, settings, t1_state)
     register_t2_handlers(application, repo, settings, t2_state)
 
-    port = int(os.environ.get("PORT", 8080))
-    app = web.Application()
-    app.router.add_post("/webhook", handle_webhook)
-    app.router.add_get("/", health)
-    app.on_startup.append(on_startup)
-    app.on_shutdown.append(on_shutdown)
+    webhook_url_env = os.environ.get("RENDER_EXTERNAL_URL") or os.environ.get("WEBHOOK_URL")
 
-    print(f"[BOOT] Starting server on 0.0.0.0:{port}", flush=True, file=sys.stderr)
-    web.run_app(app, host="0.0.0.0", port=port, print=None)
+    if webhook_url_env:
+        port = int(os.environ.get("PORT", 8080))
+        app = web.Application()
+        app.router.add_post("/webhook", handle_webhook)
+        app.router.add_get("/", health)
+        app.on_startup.append(on_startup)
+        app.on_shutdown.append(on_shutdown)
+        print(f"[BOOT] Starting webhook server on 0.0.0.0:{port}", flush=True, file=sys.stderr)
+        web.run_app(app, host="0.0.0.0", port=port, print=None)
+    else:
+        print("[BOOT] Starting in polling mode (local dev)", flush=True, file=sys.stderr)
+        await application.initialize()
+        background_task = asyncio.create_task(t1_background_loop(application.bot, repo, settings))
+        print("[BOOT] Background task started", flush=True, file=sys.stderr)
+        await application.start()
+        stop_event = asyncio.Event()
+        try:
+            await stop_event.wait()
+        except asyncio.CancelledError:
+            pass
+        finally:
+            await application.stop()
+            if background_task:
+                background_task.cancel()
 
 
 if __name__ == "__main__":
