@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -576,7 +577,6 @@ async def on_shutdown(app: web.Application) -> None:
 
 def main() -> None:
     global repo, application
-    import contextlib
 
     settings = get_settings()
     asyncio.run(init_db(DB_PATH))
