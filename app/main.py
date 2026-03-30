@@ -536,6 +536,8 @@ async def onboarding_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def handle_webhook(request: web.Request) -> web.Response:
+    if request.method == "GET":
+        return web.Response(text="OK")
     if request.method != "POST":
         return web.Response(status=405, text="Method Not Allowed")
     try:
@@ -633,6 +635,7 @@ def main() -> None:
         port = int(os.environ.get("PORT", 8080))
         app = web.Application()
         app.router.add_post("/webhook", handle_webhook)
+        app.router.add_get("/webhook", handle_webhook)
         app.router.add_get("/", health)
         app.on_startup.append(on_startup)
         app.on_shutdown.append(on_shutdown)
