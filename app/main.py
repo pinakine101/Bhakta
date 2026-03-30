@@ -544,12 +544,18 @@ async def handle_webhook(request: web.Request) -> web.Response:
         data = await request.json()
     except Exception:
         return web.Response(status=400, text="Bad Request")
+    print(f"[WEBHOOK] POST data: {str(data)[:300]}", flush=True, file=sys.stderr)
     if application:
         try:
             update = Update.de_json(data, application.bot)
-            await application.process_update(update)
-            print(f"[WEBHOOK] Processed update {update.update_id}", flush=True, file=sys.stderr)
+            print(f"[WEBHOOK] update type: callback_query={'has_cb' if update.callback_query else 'no'}, message={'has_msg' if update.message else 'no'}", flush=True, file=sys.stderr)
+            if update.callback_query:
+                print(f"[WEBHOOK] callback_query data={update.callback_query.data}", flush=True, file=sys.stderr)
+            result = await application.process_update(update)
+            print(f"[WEBHOOK] process_update result={result}, update_id={update.update_id}", flush=True, file=sys.stderr)
         except Exception as e:
+            import traceback
+            traceback.print_exc(file=sys.stderr)
             print(f"[WEBHOOK] Error processing update: {e}", flush=True, file=sys.stderr)
     return web.Response(text="OK")
 
@@ -619,8 +625,18 @@ def main() -> None:
 
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, onboarding_handler))
 
+    async def _debug_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        print(f"[DEBUG_CB] Unmatched callback: {update.callback_query.data if update.callback_query else 'no_data'}", flush=True, file=sys.stderr)
+
+    application.add_handler(CallbackQueryHandler(_debug_callback, chat_types=[], allow_empty=True))
+
     register_t1_handlers(application, repo, settings, t1_state)
     register_t2_handlers(application, repo, settings, t2_state)
+
+    handlers_count = len(application.handlers[0])  # 0 = callback query handlers
+    print(f"[BOOT] Total callback handlers registered: {handlers_count}", flush=True, file=sys.stderr)
+    for h in application.handlers[0]:
+        print(f"[BOOT]   Handler: {h}", flush=True, file=sys.stderr)
 
     webhook_url_env = os.environ.get("RENDER_EXTERNAL_URL") or os.environ.get("WEBHOOK_URL")
 
