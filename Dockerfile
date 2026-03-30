@@ -15,9 +15,8 @@ WORKDIR /app
 # Копируем файл с зависимостями
 COPY requirements.txt .
 
-# Кешируем pip между сборками (ускоряет повторные деплои)
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --cache-dir=/root/.cache/pip -r requirements.txt
+# Устанавливаем зависимости Python (кеш использует Docker layer caching)
+RUN pip install -r requirements.txt
 
 # Копируем весь проект
 COPY . .
@@ -26,5 +25,5 @@ COPY . .
 ENV PORT=8080
 EXPOSE $PORT
 
-# Запуск бота (замените на вашу точку входа)
+# Запуск бота
 CMD ["python", "-m", "app.main"]
