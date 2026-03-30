@@ -545,7 +545,12 @@ async def handle_webhook(request: web.Request) -> web.Response:
     except Exception:
         return web.Response(status=400, text="Bad Request")
     if application:
-        await application.update_queue.put(data)
+        try:
+            update = Update.de_json(data, application.bot)
+            await application.process_update(update)
+            print(f"[WEBHOOK] Processed update {update.update_id}", flush=True, file=sys.stderr)
+        except Exception as e:
+            print(f"[WEBHOOK] Error processing update: {e}", flush=True, file=sys.stderr)
     return web.Response(text="OK")
 
 
