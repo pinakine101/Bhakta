@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import os
 from dataclasses import dataclass
 from datetime import date, datetime
 from enum import Enum
 from zoneinfo import ZoneInfo
 
+from aiohttp import web
 from dotenv import load_dotenv
 from telegram import (
     InlineKeyboardButton,
@@ -25,23 +25,23 @@ from telegram.ext import (
     filters,
     ContextTypes,
 )
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from app.api import create_api_app
 from app.config import Settings, get_settings
 from app.db.database import init_db
 from app.db.repository import Repository
 from app.services.profile import detect_timezone_by_location, is_valid_birth_date
-from app.services.schedule_loader import get_tasks
-from app.services.schedule_loader import get_t3_text, get_t4_challenge_text
+from app.services.schedule_loader import (
+    course_calendar_day,
+    get_tasks,
+    get_t3_text,
+    get_t4_challenge_text,
+)
 from app.services.word_analysis import build_default_word_dict_rows
-from app.services.schedule_loader import course_calendar_day
 from app.services.zodiac import get_age_group, get_zodiac_and_element
 from app.timer import DONE_SOUND, START_SOUND, play_sound
 from app.t1_bot import T1State, register_t1_handlers, send_daily_plan_now, t1_background_loop
 from app.t2_bot import T2State, register_t2_handlers
 
-# ==================== НАСТРОЙКИ ====================
 load_dotenv()
 DB_PATH = os.path.join(os.getcwd(), "cont_bot.sqlite3")
 PRACTICE_START = "practice:start"
@@ -51,7 +51,9 @@ t1_state = T1State()
 t2_state = T2State()
 
 settings = get_settings()
-repo = None  # будет инициализировано в main
+repo = None
+application: Application | None = None
+background_task: asyncio.Task | None = None
 
 
 def resolve_tz_name(tz_name: str | None, fallback: str) -> str:
@@ -531,9 +533,50 @@ async def onboarding_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
 
+async def handle_webhook(request: web.Request) -> web.Response:
+    if request.method != "POST":
+        return web.Response(status=405, text="Method Not Allowed")
+    try:
+        data = await request.json()
+    except Exception:
+        return web.Response(status=400, text="Bad Request")
+    if application:
+        await application.update_queue.put(data)
+    return web.Response(text="OK")
+
+
+async def health(request: web.Request) -> web.Response:
+    return web.Response(text="OK")
+
+
+async def on_startup(app: web.Application) -> None:
+    global background_task
+    webhook_url_env = os.environ.get("RENDER_EXTERNAL_URL") or os.environ.get("WEBHOOK_URL")
+    if not webhook_url_env:
+        raise RuntimeError("RENDER_EXTERNAL_URL or WEBHOOK_URL env var is not set")
+    webhook_url = f"{webhook_url_env.rstrip('/')}/webhook"
+    print(f"[BOOT] Setting webhook to {webhook_url}")
+    if application:
+        await application.bot.set_webhook(webhook_url)
+        background_task = asyncio.create_task(t1_background_loop(application.bot, repo, settings))
+        print("[BOOT] Background task started")
+
+
+async def on_shutdown(app: web.Application) -> None:
+    global background_task
+    print("[SHUTDOWN] Cleaning up...")
+    if application:
+        with contextlib.suppress(Exception):
+            await application.bot.delete_webhook()
+    if background_task:
+        background_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await background_task
+
+
 def main() -> None:
-    global repo
-    import asyncio
+    global repo, application
+    import contextlib
 
     settings = get_settings()
     asyncio.run(init_db(DB_PATH))
@@ -542,7 +585,6 @@ def main() -> None:
 
     application = Application.builder().token(settings.bot_token).build()
 
-    # Регистрируем обработчики
     application.add_handler(CommandHandler("start", start_cmd))
     application.add_handler(CommandHandler("help", help_cmd))
     application.add_handler(CommandHandler("stop", stop_cmd))
@@ -561,30 +603,18 @@ def main() -> None:
 
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, onboarding_handler))
 
-    # Регистрируем модули T1 и T2 (они должны добавить свои обработчики в application)
     register_t1_handlers(application, repo, settings, t1_state)
     register_t2_handlers(application, repo, settings, t2_state)
 
-    # Запуск фонового планировщика (как в оригинале)
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.create_task(t1_background_loop(application.bot, repo, settings))
-
-    webhook_url = os.environ.get("RENDER_EXTERNAL_URL") or os.environ.get("DEPLOY_URL") or os.environ.get("WEBHOOK_URL")
-    if not webhook_url:
-        raise RuntimeError(
-            "No webhook URL found. Set RENDER_EXTERNAL_URL, DEPLOY_URL, or WEBHOOK_URL env var."
-        )
-    full_url = f"{webhook_url.rstrip('/')}/webhook"
-    print(f"[BOOT] webhook_url env vars: RENDER_EXTERNAL_URL={os.environ.get('RENDER_EXTERNAL_URL')!r}, DEPLOY_URL={os.environ.get('DEPLOY_URL')!r}, WEBHOOK_URL={os.environ.get('WEBHOOK_URL')!r}")
-    print(f"[BOOT] Starting webhook on {full_url}")
     port = int(os.environ.get("PORT", 8080))
-    application.run_webhook(
-        listen="0.0.0.0",
-        port=port,
-        webhook_url=full_url,
-        secret_token=os.environ.get("WEBHOOK_SECRET"),
-    )
+    app = web.Application()
+    app.router.add_post("/webhook", handle_webhook)
+    app.router.add_get("/", health)
+    app.on_startup.append(on_startup)
+    app.on_shutdown.append(on_shutdown)
+
+    print(f"[BOOT] Starting server on 0.0.0.0:{port}")
+    web.run_app(app, host="0.0.0.0", port=port, print=None)
 
 
 if __name__ == "__main__":
