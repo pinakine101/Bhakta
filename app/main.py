@@ -551,7 +551,7 @@ async def handle_webhook(request: web.Request) -> web.Response:
             print(f"[WEBHOOK] update type: callback_query={'has_cb' if update.callback_query else 'no'}, message={'has_msg' if update.message else 'no'}", flush=True, file=sys.stderr)
             if update.callback_query:
                 print(f"[WEBHOOK] callback_query data={update.callback_query.data}", flush=True, file=sys.stderr)
-            await application.dispatcher.process_update(update)
+            await application.process_update(update)
             print(f"[WEBHOOK] processed update_id={update.update_id}", flush=True, file=sys.stderr)
         except Exception as e:
             import traceback
