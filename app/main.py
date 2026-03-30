@@ -625,13 +625,13 @@ def main() -> None:
 
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, onboarding_handler))
 
+    register_t1_handlers(application, repo, settings, t1_state)
+    register_t2_handlers(application, repo, settings, t2_state)
+
     async def _debug_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         print(f"[DEBUG_CB] Unmatched callback: {update.callback_query.data if update.callback_query else 'no_data'}", flush=True, file=sys.stderr)
 
     application.add_handler(CallbackQueryHandler(_debug_callback, chat_types=[], allow_empty=True))
-
-    register_t1_handlers(application, repo, settings, t1_state)
-    register_t2_handlers(application, repo, settings, t2_state)
 
     handlers_count = len(application.handlers[0])  # 0 = callback query handlers
     print(f"[BOOT] Total callback handlers registered: {handlers_count}", flush=True, file=sys.stderr)
