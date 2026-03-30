@@ -631,7 +631,7 @@ def main() -> None:
     async def _debug_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         print(f"[DEBUG_CB] Unmatched callback: {update.callback_query.data if update.callback_query else 'no_data'}", flush=True, file=sys.stderr)
 
-    application.add_handler(CallbackQueryHandler(_debug_callback, chat_types=[], allow_empty=True))
+    application.add_handler(CallbackQueryHandler(_debug_callback))
 
     handlers_count = len(application.handlers[0])  # 0 = callback query handlers
     print(f"[BOOT] Total callback handlers registered: {handlers_count}", flush=True, file=sys.stderr)
