@@ -580,6 +580,9 @@ async def on_startup(app: web.Application) -> None:
         webhook_url = f"{webhook_url_env.rstrip('/')}/webhook"
         print(f"[BOOT] Setting webhook to {webhook_url}", flush=True, file=sys.stderr)
         if application:
+            await application.initialize()
+            await application.start()
+            print("[BOOT] PTB application started", flush=True, file=sys.stderr)
             await application.bot.set_webhook(webhook_url)
     if application:
         background_task = asyncio.create_task(t1_background_loop(application.bot, repo, settings))
@@ -590,6 +593,10 @@ async def on_shutdown(app: web.Application) -> None:
     global background_task
     print("[SHUTDOWN] Cleaning up...")
     if application:
+        with contextlib.suppress(Exception):
+            await application.stop()
+        with contextlib.suppress(Exception):
+            await application.shutdown()
         with contextlib.suppress(Exception):
             await application.bot.delete_webhook()
     if background_task:
