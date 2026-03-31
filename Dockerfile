@@ -14,9 +14,10 @@ WORKDIR /app
 
 # Копируем файл с зависимостями
 COPY requirements.txt .
+COPY app/requirements.txt app/
 
 # Устанавливаем зависимости Python (кеш использует Docker layer caching)
-RUN pip install -r requirements.txt
+RUN pip install -r requirements.txt && pip install -r app/requirements.txt
 
 # Копируем весь проект
 COPY . .
