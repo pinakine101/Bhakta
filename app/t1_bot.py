@@ -517,7 +517,7 @@ async def _send_daily_tasks_digest(
         await repo.upsert_scheduled_task(uid, "T4", today_s, "", t4_id, t4_ws, t4_we, None)
 
     rows = await repo.list_scheduled_for_date(uid, today_s)
-    task_info: list[tuple[str, str, int | None, str]] = []
+    task_info: list[tuple[str, str, int | None, str, str]] = []
 
     for r in rows:
         t = str(r["task_type"])
@@ -528,23 +528,23 @@ async def _send_daily_tasks_digest(
         if t == "T1_morning":
             title = "Т1 утро"
             window = _format_window_local(win_start, win_end, tz_name)
-            task_info.append((title, window, rid, "t1"))
+            task_info.append((title, window, rid, "t1", win_start, win_end))
         elif t == "T1_evening":
             title = "Т1 вечер"
             window = _format_window_local(win_start, win_end, tz_name)
-            task_info.append((title, window, rid, "t1"))
+            task_info.append((title, window, rid, "t1", win_start, win_end))
         elif t == "T2":
             title = "Т2"
             window = _format_window_local(win_start, win_end, tz_name)
-            task_info.append((title, window, rid, "t2"))
+            task_info.append((title, window, rid, "t2", win_start, win_end))
         elif t == "T3":
             title = "Т3"
             window = _format_window_local(win_start, win_end, tz_name)
-            task_info.append((title, window, rid, "t3"))
+            task_info.append((title, window, rid, "t3", win_start, win_end))
         elif t == "T4":
             title = "Т4"
             window = _format_window_local(win_start, win_end, tz_name)
-            task_info.append((title, window, rid, "t4"))
+            task_info.append((title, window, rid, "t4", win_start, win_end))
 
     if not task_info:
         await bot.send_message(uid, "На сегодня заданий нет.")
@@ -554,9 +554,9 @@ async def _send_daily_tasks_digest(
     buttons: list[list[InlineKeyboardButton]] = []
     mark_rows: list[int] = []
 
-    for title, window, row_id, task_type in task_info:
+    for title, window, row_id, task_type, ws, we in task_info:
         lines.append(f"• {title}  {window}")
-        if row_id is not None and _within_window_utc_range(win_start, win_end):
+        if row_id is not None and _within_window_utc_range(ws, we):
             if task_type == "t1":
                 is_morning = "Т1 утро" in title
                 cb = f"t1:mo:{row_id}" if is_morning else f"t1:eo:{row_id}"
