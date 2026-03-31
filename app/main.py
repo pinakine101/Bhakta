@@ -660,6 +660,7 @@ def main() -> None:
     register_t2_handlers(application, repo, settings, t2_state)
 
     webhook_url = os.environ.get("RENDER_EXTERNAL_URL") or os.environ.get("WEBHOOK_URL")
+    print(f"[BOOT] webhook_url='{webhook_url}' RENDER_EXTERNAL_URL='{os.environ.get('RENDER_EXTERNAL_URL')}' WEBHOOK_URL='{os.environ.get('WEBHOOK_URL')}'", flush=True, file=sys.stderr)
 
     if webhook_url:
         port = int(os.environ.get("PORT", 8080))
