@@ -544,9 +544,15 @@ async def handle_webhook(request: web.Request) -> web.Response:
         data = await request.json()
     except Exception:
         return web.Response(status=400, text="Bad Request")
+    print(f"[WEBHOOK] POST data: {str(data)[:200]}", flush=True, file=sys.stderr)
     if application:
+        print(f"[WEBHOOK] application is: {type(application)}", flush=True, file=sys.stderr)
         update = Update.de_json(data, application.bot)
+        print(f"[WEBHOOK] update_id={update.update_id}, has_msg={bool(update.message)}, has_cb={bool(update.callback_query)}", flush=True, file=sys.stderr)
         await application.process_update(update)
+        print(f"[WEBHOOK] processed", flush=True, file=sys.stderr)
+    else:
+        print("[WEBHOOK] application is None!", flush=True, file=sys.stderr)
     return web.Response(text="OK")
 
 
@@ -565,8 +571,11 @@ async def on_startup(app: web.Application) -> None:
         await application.initialize()
         await application.start()
         await application.bot.set_webhook(webhook_url)
+        print("[BOOT] PTB initialized and webhook set", flush=True, file=sys.stderr)
         background_task = asyncio.create_task(t1_background_loop(application.bot, repo, settings))
         print("[BOOT] Background task started", flush=True, file=sys.stderr)
+    else:
+        print("[BOOT] application is None!", flush=True, file=sys.stderr)
 
 
 async def on_shutdown(app: web.Application) -> None:
