@@ -138,6 +138,15 @@ async def _t1_callback_base(update: Update, row_id: int) -> dict | None:
     if row["completed"] or row["skipped"]:
         await query.answer("Уже обработано")
         return None
+    ws = str(row.get("window_start") or "")
+    we = str(row.get("window_end") or "")
+    now_iso = _now_utc_iso()
+    if now_iso < ws:
+        await query.answer("Дождитесь временного окна", show_alert=True)
+        return None
+    if now_iso > we:
+        await query.answer("Окно задания закончилось — задание удалено.", show_alert=True)
+        return None
     return row
 
 
@@ -164,9 +173,6 @@ async def _t1_callback_t1(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     row_id = int(match.group(1))
     row = await _t1_callback_base(update, row_id)
     if not row:
-        return
-    if not _within_window_utc(row["window_end"]):
-        await query.answer("Окно задания закончилось — задание удалено.", show_alert=True)
         return
     if row["task_type"] != "T1_morning":
         await query.answer("Ошибка", show_alert=True)
@@ -195,9 +201,6 @@ async def _t1_callback_ms(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
     if row["task_type"] != "T1_morning":
         await query.answer("Ошибка", show_alert=True)
-        return
-    if not _within_window_utc(row["window_end"]):
-        await query.answer("Окно задания закончилось — задание удалено.", show_alert=True)
         return
     uid = update.effective_user.id
     pr = await repo.get_t1_progress(uid)
@@ -255,9 +258,6 @@ async def _t1_callback_eo(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     row = await _t1_callback_base(update, row_id)
     if not row:
         return
-    if not _within_window_utc(row["window_end"]):
-        await query.answer("Окно задания закончилось — задание удалено.", show_alert=True)
-        return
     if row["task_type"] != "T1_evening":
         await query.answer("Ошибка", show_alert=True)
         return
@@ -288,9 +288,6 @@ async def _t1_callback_es(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
     if row["task_type"] != "T1_evening":
         await query.answer("Ошибка", show_alert=True)
-        return
-    if not _within_window_utc(row["window_end"]):
-        await query.answer("Окно задания закончилось — задание удалено.", show_alert=True)
         return
     uid = update.effective_user.id
     rhythm = row.get("evening_rhythm") or "4:4:6:4"
@@ -476,8 +473,6 @@ async def _send_daily_tasks_digest(
     now_iso = _now_utc_iso()
     tz_name = resolve_tz_name(tz, settings.timezone)
     today_s = today.isoformat()
-    buttons: list[list[InlineKeyboardButton]] = []
-    mark_rows: list[int] = []
 
     sched = load_schedule(age_group)
     max_ix = max(0, len(sched["t1_evening_rhythms"]) - 1)
@@ -522,48 +517,74 @@ async def _send_daily_tasks_digest(
         await repo.upsert_scheduled_task(uid, "T4", today_s, "", t4_id, t4_ws, t4_we, None)
 
     rows = await repo.list_scheduled_for_date(uid, today_s)
-    seen_button_titles: set[str] = set()
-    for r in rows:
-        if r["completed"] or r["skipped"]:
-            continue
-        if not _within_window_utc_range(str(r["window_start"]), str(r["window_end"])):
-            continue
-        if not include_already_sent and r["sent_at"]:
-            continue
+    task_info: list[tuple[str, str, int | None, str]] = []
 
+    for r in rows:
         t = str(r["task_type"])
         rid = int(r["id"])
+        win_start = str(r.get("window_start") or "")
+        win_end = str(r.get("window_end") or "")
+
         if t == "T1_morning":
-            title = T1_MORNING_TITLE
-            cb = f"t1:mo:{rid}"
+            title = "Т1 утро"
+            window = _format_window_local(win_start, win_end, tz_name)
+            task_info.append((title, window, rid, "t1"))
         elif t == "T1_evening":
-            title = T1_EVENING_TITLE
-            cb = f"t1:eo:{rid}"
+            title = "Т1 вечер"
+            window = _format_window_local(win_start, win_end, tz_name)
+            task_info.append((title, window, rid, "t1"))
         elif t == "T2":
             title = "Т2"
-            cb = f"t2:o:{rid}"
+            window = _format_window_local(win_start, win_end, tz_name)
+            task_info.append((title, window, rid, "t2"))
         elif t == "T3":
             title = "Т3"
-            cb = f"t3:o:{rid}"
+            window = _format_window_local(win_start, win_end, tz_name)
+            task_info.append((title, window, rid, "t3"))
         elif t == "T4":
             title = "Т4"
-            cb = f"t4:o:{rid}"
-        else:
-            continue
+            window = _format_window_local(win_start, win_end, tz_name)
+            task_info.append((title, window, rid, "t4"))
 
-        if title not in seen_button_titles:
-            buttons.append([InlineKeyboardButton(text=title, callback_data=cb)])
-            seen_button_titles.add(title)
-        if not r["sent_at"]:
-            mark_rows.append(rid)
-
-    if not buttons:
+    if not task_info:
+        await bot.send_message(uid, "На сегодня заданий нет.")
         return
 
-    text = "Список активных заданий.\nПосле окончания окна задание удаляется и открыть его уже нельзя."
-    await bot.send_message(uid, text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
-    for row_id in mark_rows:
-        await repo.mark_scheduled_sent(row_id, now_iso)
+    lines = ["Задания на сегодня:\n"]
+    buttons: list[list[InlineKeyboardButton]] = []
+    mark_rows: list[int] = []
+
+    for title, window, row_id, task_type in task_info:
+        lines.append(f"• {title}  {window}")
+        if row_id is not None and _within_window_utc_range(win_start, win_end):
+            if task_type == "t1":
+                is_morning = "Т1 утро" in title
+                cb = f"t1:mo:{row_id}" if is_morning else f"t1:eo:{row_id}"
+            elif task_type == "t2":
+                cb = f"t2:o:{row_id}"
+            elif task_type == "t3":
+                cb = f"t3:o:{row_id}"
+            else:
+                cb = f"t4:o:{row_id}"
+            buttons.append([InlineKeyboardButton(text=title, callback_data=cb)])
+            mark_rows.append(row_id)
+
+    if buttons:
+        text = "\n".join(lines)
+        await bot.send_message(uid, text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+        for row_id in mark_rows:
+            await repo.mark_scheduled_sent(row_id, now_iso)
+    else:
+        await bot.send_message(uid, "\n".join(lines) + "\n\nАктивных окон сейчас нет.")
+
+
+def _format_window_local(win_start: str, win_end: str, tz_name: str) -> str:
+    try:
+        ws = datetime.fromisoformat(win_start.replace("Z", "+00:00")).astimezone(ZoneInfo(tz_name))
+        we = datetime.fromisoformat(win_end.replace("Z", "+00:00")).astimezone(ZoneInfo(tz_name))
+        return f"{ws.strftime('%H:%M')}–{we.strftime('%H:%M')}"
+    except Exception:
+        return "спонтанно"
 
 
 async def send_daily_plan_now(bot: Bot, repo: Repository, settings: Settings, uid: int) -> None:

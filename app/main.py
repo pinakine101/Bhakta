@@ -388,6 +388,15 @@ async def t3_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if not row or row["user_id"] != uid or row["task_type"] != "T3":
         await query.message.reply_text("Задание не найдено")
         return
+    ws = str(row.get("window_start") or "")
+    we = str(row.get("window_end") or "")
+    now_iso = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    if now_iso < ws:
+        await query.answer("Дождитесь временного окна", show_alert=True)
+        return
+    if now_iso > we:
+        await query.message.reply_text("Окно задания закончилось — задание удалено.")
+        return
     if row["skipped"] and not row["completed"]:
         await query.message.reply_text("Окно задания закончилось — задание удалено.")
         return
@@ -442,6 +451,15 @@ async def t4_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     row = await repo.get_scheduled_task_by_id(row_id)
     if not row or row["user_id"] != uid or row["task_type"] != "T4":
         await query.message.reply_text("Задание не найдено")
+        return
+    ws = str(row.get("window_start") or "")
+    we = str(row.get("window_end") or "")
+    now_iso = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    if now_iso < ws:
+        await query.answer("Дождитесь временного окна", show_alert=True)
+        return
+    if now_iso > we:
+        await query.message.reply_text("Окно задания закончилось — задание удалено.")
         return
     if row["skipped"] and not row["completed"]:
         await query.message.reply_text("Окно задания закончилось — задание удалено.")

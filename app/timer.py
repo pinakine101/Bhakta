@@ -5,9 +5,6 @@ from pathlib import Path
 
 from telegram import Bot
 
-
-
-# ========== НАСТРОЙКИ ==========
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SOUNDS_DIR = _PROJECT_ROOT / "sounds"
 START_SOUND = SOUNDS_DIR / "start.wav"
@@ -16,37 +13,35 @@ DONE_SOUND = SOUNDS_DIR / "done.wav"
 _PYGAME_READY = False
 
 
-# ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
 def play_sound(sound_path: str | Path) -> None:
-    """Воспроизводит звуковой файл локально на ПК, где запущен бот."""
     sound_file = str(sound_path)
     if not Path(sound_file).exists():
-        logging.warning("Файл звука не найден: %s", sound_file)
+        logging.warning("Sound file not found: %s", sound_file)
         return
 
-    # Для Windows используем winsound как надёжный fallback.
     if os.name == "nt":
         try:
             import winsound
-
             winsound.PlaySound(sound_file, winsound.SND_FILENAME | winsound.SND_ASYNC)
             return
-        except Exception as exc:
-            logging.warning("winsound не сработал, пробуем pygame: %s", exc)
+        except Exception:
+            pass
+
+    if os.name != "nt":
+        os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 
     global _PYGAME_READY
     try:
         import pygame
-
         if not _PYGAME_READY:
-            pygame.mixer.init()
+            pygame.mixer.init(frequency=22050, size=-16, channels=2, buffer=512)
             _PYGAME_READY = True
         pygame.mixer.music.load(sound_file)
         pygame.mixer.music.play()
     except ImportError:
-        logging.warning("Pygame не установлен, звуки отключены")
+        pass
     except Exception as exc:
-        logging.error("Ошибка воспроизведения звука %s: %s", sound_path, exc)
+        logging.warning("Sound play failed: %s", exc)
 
 
 async def countdown_notify(chat_id: int, bot: Bot, duration_seconds: int) -> bool:

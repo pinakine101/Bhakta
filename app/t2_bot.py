@@ -48,6 +48,15 @@ def _within_window_utc(window_end_iso: str) -> bool:
     return _now_utc_iso() <= window_end_iso
 
 
+def _window_status(window_start_iso: str, window_end_iso: str) -> str:
+    now = _now_utc_iso()
+    if now < window_start_iso:
+        return "not_started"
+    if now > window_end_iso:
+        return "ended"
+    return "open"
+
+
 @dataclass
 class T2Pending:
     row_id: int
@@ -250,6 +259,15 @@ async def _t2_base(update: Update, row_id: int) -> tuple[int, dict | None]:
     if row["completed"] or row["skipped"]:
         await query.answer("Уже обработано")
         return uid, None
+    ws = str(row.get("window_start") or "")
+    we = str(row.get("window_end") or "")
+    status = _window_status(ws, we)
+    if status == "not_started":
+        await query.answer("Дождитесь временного окна", show_alert=True)
+        return uid, None
+    if status == "ended":
+        await query.answer("Окно задания закончилось — задание удалено.", show_alert=True)
+        return uid, None
     return uid, row
 
 
@@ -273,9 +291,6 @@ async def _t2_callback_o(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     row_id = int(match.group(1))
     uid, row = await _t2_base(update, row_id)
     if row is None:
-        return
-    if not _within_window_utc(row["window_end"]):
-        await query.answer("Окно задания закончилось — задание удалено.", show_alert=True)
         return
     st = row.get("t2_subtype") or ""
     chat_id = query.message.chat.id
@@ -328,7 +343,13 @@ async def _t2_callback_s(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if row.get("t2_subtype") != "art":
         await query.answer("Ошибка", show_alert=True)
         return
-    if not _within_window_utc(row["window_end"]):
+    ws = str(row.get("window_start") or "")
+    we = str(row.get("window_end") or "")
+    status = _window_status(ws, we)
+    if status == "not_started":
+        await query.answer("Дождитесь временного окна", show_alert=True)
+        return
+    if status == "ended":
         await query.answer("Окно задания закончилось — задание удалено.", show_alert=True)
         return
     tasks = get_tasks()
@@ -390,9 +411,6 @@ async def _t2_callback_ld(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if row.get("t2_subtype") != "life_theme":
         await query.answer("Ошибка", show_alert=True)
         return
-    if not _within_window_utc(row["window_end"]):
-        await query.answer("Окно задания закончилось — задание удалено.", show_alert=True)
-        return
     play_sound(DONE_SOUND)
     t2_state.pending[uid] = T2Pending(row_id=row_id, step="life_text")
     await query.message.reply_text("Напиши свои размышления.", reply_markup=ReplyKeyboardRemove())
@@ -410,9 +428,6 @@ async def _t2_callback_fd(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
     if row.get("t2_subtype") != "final":
         await query.answer("Ошибка", show_alert=True)
-        return
-    if not _within_window_utc(row["window_end"]):
-        await query.answer("Окно задания закончилось — задание удалено.", show_alert=True)
         return
     play_sound(DONE_SOUND)
     t2_state.pending[uid] = T2Pending(row_id=row_id, step="final_word")
@@ -433,7 +448,13 @@ async def _t2_callback_c(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if row.get("t2_subtype") != "choice":
         await query.answer("Ошибка", show_alert=True)
         return
-    if not _within_window_utc(row["window_end"]):
+    ws = str(row.get("window_start") or "")
+    we = str(row.get("window_end") or "")
+    status = _window_status(ws, we)
+    if status == "not_started":
+        await query.answer("Дождитесь временного окна", show_alert=True)
+        return
+    if status == "ended":
         await query.answer("Окно задания закончилось — задание удалено.", show_alert=True)
         return
     tasks = get_tasks()
