@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hashlib
-import sys
 import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
@@ -112,7 +111,6 @@ async def _t1_message_router(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 def register_t1_handlers(app: Application, repo: Repository, settings: Settings, state: T1State) -> None:
-    print("[T1] Registering handlers", flush=True, file=sys.stderr)
     app.add_handler(CallbackQueryHandler(_t1_callback_t1, pattern=re.compile(r"^t1:mo:(\d+)$")))
     app.add_handler(CallbackQueryHandler(_t1_callback_ms, pattern=re.compile(r"^t1:ms:(\d+)$")))
     app.add_handler(CallbackQueryHandler(_t1_callback_md, pattern=re.compile(r"^t1:md:(\d+)$")))
@@ -120,7 +118,6 @@ def register_t1_handlers(app: Application, repo: Repository, settings: Settings,
     app.add_handler(CallbackQueryHandler(_t1_callback_es, pattern=re.compile(r"^t1:es:(\d+)$")))
     app.add_handler(CallbackQueryHandler(_t1_callback_ed, pattern=re.compile(r"^t1:ed:(\d+)$")))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _t1_message_router))
-    print(f"[T1] Handlers registered, total callback handlers: {len(app.handlers[0])}", flush=True, file=sys.stderr)
 
 
 async def _t1_callback_base(update: Update, row_id: int) -> dict | None:
@@ -155,7 +152,6 @@ _t1_pending_map: dict[int, dict[int, int | dict]] = {}
 
 async def _t1_callback_t1(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
-    print(f"[T1_CB] data={query.data}", flush=True, file=sys.stderr)
     match = re.match(r"^t1:mo:(\d+)$", query.data or "")
     if not match:
         return

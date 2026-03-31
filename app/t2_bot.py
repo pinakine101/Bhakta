@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import re
-import sys
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timezone
 from zoneinfo import ZoneInfo
@@ -215,7 +214,6 @@ async def _send_t2_open_final(bot: Bot, chat_id: int, row: dict, tasks: dict, sh
 
 
 def register_t2_handlers(app: Application, repo: Repository, settings: Settings, state: T2State) -> None:
-    print("[T2] Registering handlers", flush=True, file=sys.stderr)
     app.add_handler(CallbackQueryHandler(_t2_callback_o, pattern=re.compile(r"^t2:o:(\d+)$")))
     app.add_handler(CallbackQueryHandler(_t2_callback_sk, pattern=re.compile(r"^t2:sk:(\d+)$")))
     app.add_handler(CallbackQueryHandler(_t2_callback_s, pattern=re.compile(r"^t2:s:(\d+)$")))
@@ -224,7 +222,6 @@ def register_t2_handlers(app: Application, repo: Repository, settings: Settings,
     app.add_handler(CallbackQueryHandler(_t2_callback_fd, pattern=re.compile(r"^t2:fd:(\d+)$")))
     app.add_handler(CallbackQueryHandler(_t2_callback_c, pattern=re.compile(r"^t2:c:(\d+):(\d+)$")))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _t2_text_flow))
-    print(f"[T2] Handlers registered, total callback handlers: {len(app.handlers[0])}", flush=True, file=sys.stderr)
 
 
 async def _t2_base(update: Update, row_id: int) -> tuple[int, dict | None]:

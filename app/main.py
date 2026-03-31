@@ -544,39 +544,27 @@ async def handle_webhook(request: web.Request) -> web.Response:
         data = await request.json()
     except Exception:
         return web.Response(status=400, text="Bad Request")
-    print(f"[WEBHOOK] POST data: {str(data)[:300]}", flush=True, file=sys.stderr)
     if application:
-        try:
-            update = Update.de_json(data, application.bot)
-            print(f"[WEBHOOK] update type: callback_query={'has_cb' if update.callback_query else 'no'}, message={'has_msg' if update.message else 'no'}", flush=True, file=sys.stderr)
-            if update.callback_query:
-                print(f"[WEBHOOK] callback_query data={update.callback_query.data}", flush=True, file=sys.stderr)
-            await application.process_update(update)
-            print(f"[WEBHOOK] processed update_id={update.update_id}", flush=True, file=sys.stderr)
-        except Exception as e:
-            import traceback
-            traceback.print_exc(file=sys.stderr)
-            print(f"[WEBHOOK] Error processing update: {e}", flush=True, file=sys.stderr)
+        update = Update.de_json(data, application.bot)
+        await application.process_update(update)
     return web.Response(text="OK")
 
 
 async def health(request: web.Request) -> web.Response:
-    print("[HEALTH] GET / called", flush=True, file=sys.stderr)
     return web.Response(text="OK")
 
 
 async def on_startup(app: web.Application) -> None:
     global background_task
     webhook_url_env = os.environ.get("RENDER_EXTERNAL_URL") or os.environ.get("WEBHOOK_URL")
-    if webhook_url_env:
-        webhook_url = f"{webhook_url_env.rstrip('/')}/webhook"
-        print(f"[BOOT] Setting webhook to {webhook_url}", flush=True, file=sys.stderr)
-        if application:
-            await application.initialize()
-            await application.start()
-            print("[BOOT] PTB application started", flush=True, file=sys.stderr)
-            await application.bot.set_webhook(webhook_url)
+    if not webhook_url_env:
+        raise RuntimeError("RENDER_EXTERNAL_URL or WEBHOOK_URL env var is not set")
+    webhook_url = f"{webhook_url_env.rstrip('/')}/webhook"
+    print(f"[BOOT] Setting webhook to {webhook_url}", flush=True, file=sys.stderr)
     if application:
+        await application.initialize()
+        await application.start()
+        await application.bot.set_webhook(webhook_url)
         background_task = asyncio.create_task(t1_background_loop(application.bot, repo, settings))
         print("[BOOT] Background task started", flush=True, file=sys.stderr)
 
@@ -584,17 +572,33 @@ async def on_startup(app: web.Application) -> None:
 async def on_shutdown(app: web.Application) -> None:
     global background_task
     print("[SHUTDOWN] Cleaning up...")
-    if application:
-        with contextlib.suppress(Exception):
-            await application.stop()
-        with contextlib.suppress(Exception):
-            await application.shutdown()
-        with contextlib.suppress(Exception):
-            await application.bot.delete_webhook()
     if background_task:
         background_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await background_task
+    if application:
+        with contextlib.suppress(Exception):
+            await application.stop()
+        with contextlib.suppress(Exception):
+            await application.bot.delete_webhook()
+
+
+async def _run_polling() -> None:
+    global background_task
+    if application:
+        await application.initialize()
+        await application.start()
+        background_task = asyncio.create_task(t1_background_loop(application.bot, repo, settings))
+        print("[BOOT] Background task started", flush=True, file=sys.stderr)
+        stop_event = asyncio.Event()
+        try:
+            await stop_event.wait()
+        except asyncio.CancelledError:
+            pass
+        finally:
+            await application.stop()
+            if background_task:
+                background_task.cancel()
 
 
 def main() -> None:
@@ -628,19 +632,9 @@ def main() -> None:
     register_t1_handlers(application, repo, settings, t1_state)
     register_t2_handlers(application, repo, settings, t2_state)
 
-    async def _debug_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        print(f"[DEBUG_CB] Unmatched callback: {update.callback_query.data if update.callback_query else 'no_data'}", flush=True, file=sys.stderr)
+    webhook_url = os.environ.get("RENDER_EXTERNAL_URL") or os.environ.get("WEBHOOK_URL")
 
-    application.add_handler(CallbackQueryHandler(_debug_callback))
-
-    handlers_count = len(application.handlers[0])  # 0 = callback query handlers
-    print(f"[BOOT] Total callback handlers registered: {handlers_count}", flush=True, file=sys.stderr)
-    for h in application.handlers[0]:
-        print(f"[BOOT]   Handler: {h}", flush=True, file=sys.stderr)
-
-    webhook_url_env = os.environ.get("RENDER_EXTERNAL_URL") or os.environ.get("WEBHOOK_URL")
-
-    if webhook_url_env:
+    if webhook_url:
         port = int(os.environ.get("PORT", 8080))
         app = web.Application()
         app.router.add_post("/webhook", handle_webhook)
@@ -651,26 +645,8 @@ def main() -> None:
         print(f"[BOOT] Starting webhook server on 0.0.0.0:{port}", flush=True, file=sys.stderr)
         web.run_app(app, host="0.0.0.0", port=port, print=None)
     else:
-        print("[BOOT] Starting in polling mode (local dev)", flush=True, file=sys.stderr)
+        print("[BOOT] Starting polling mode", flush=True, file=sys.stderr)
         asyncio.run(_run_polling())
-
-
-async def _run_polling() -> None:
-    global background_task
-    if application:
-        await application.initialize()
-        background_task = asyncio.create_task(t1_background_loop(application.bot, repo, settings))
-        print("[BOOT] Background task started", flush=True, file=sys.stderr)
-        await application.start()
-        stop_event = asyncio.Event()
-        try:
-            await stop_event.wait()
-        except asyncio.CancelledError:
-            pass
-        finally:
-            await application.stop()
-            if background_task:
-                background_task.cancel()
 
 
 if __name__ == "__main__":
