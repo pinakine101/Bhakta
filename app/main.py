@@ -360,7 +360,7 @@ async def practice_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if refreshed and refreshed.get("age_group"):
         await repo.ensure_t1_progress(uid, refreshed["age_group"])
 
-    await send_daily_plan_now(query.bot, repo, settings, uid)
+    await send_daily_plan_now(context.bot, repo, settings, uid)
 
 
 async def tasks_today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

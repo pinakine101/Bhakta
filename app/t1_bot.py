@@ -17,6 +17,9 @@ from telegram.ext import Application, CallbackQueryHandler, MessageHandler, filt
 from app.config import Settings
 from app.db.repository import Repository
 from app.t2_bot import deliver_t2_slot
+
+repo: Repository = None  # set by register_t1_handlers
+settings: Settings = None  # set by register_t1_handlers
 from app.timer import DONE_SOUND, START_SOUND, play_sound, start_task_timer
 from app.services.t1_runtime import (
     T1_EVENING_BODY_TEMPLATE,
@@ -110,7 +113,10 @@ async def _t1_message_router(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await _t1_morning_word_message(update, context)
 
 
-def register_t1_handlers(app: Application, repo: Repository, settings: Settings, state: T1State) -> None:
+def register_t1_handlers(app: Application, _repo: Repository, _settings: Settings, state: T1State) -> None:
+    global repo, settings
+    repo = _repo
+    settings = _settings
     app.add_handler(CallbackQueryHandler(_t1_callback_t1, pattern=re.compile(r"^t1:mo:(\d+)$")))
     app.add_handler(CallbackQueryHandler(_t1_callback_ms, pattern=re.compile(r"^t1:ms:(\d+)$")))
     app.add_handler(CallbackQueryHandler(_t1_callback_md, pattern=re.compile(r"^t1:md:(\d+)$")))
@@ -165,7 +171,7 @@ async def _t1_callback_t1(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if row["task_type"] != "T1_morning":
         await query.answer("Ошибка", show_alert=True)
         return
-    await _send_t1_image_if_exists(query.bot, query.message.chat.id)
+    await _send_t1_image_if_exists(context.bot, query.message.chat.id)
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -255,7 +261,7 @@ async def _t1_callback_eo(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if row["task_type"] != "T1_evening":
         await query.answer("Ошибка", show_alert=True)
         return
-    await _send_t1_image_if_exists(query.bot, query.message.chat.id)
+    await _send_t1_image_if_exists(context.bot, query.message.chat.id)
     rhythm = row.get("evening_rhythm") or ""
     cycles = int(row.get("evening_cycles") or 0)
     body = T1_EVENING_BODY_TEMPLATE.format(rhythm=rhythm, cycles=cycles)
@@ -296,7 +302,7 @@ async def _t1_callback_es(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     t1_state.evening_timers[uid] = asyncio.create_task(
         start_task_timer(
             chat_id=query.message.chat.id,
-            bot=query.bot,
+            bot=context.bot,
             duration_seconds=duration,
             task_name=f"T1 вечер #{row_id}",
             notify_countdown=False,

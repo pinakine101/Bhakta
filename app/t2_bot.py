@@ -30,6 +30,9 @@ from app.services.schedule_loader import (
 from app.services.t1_runtime import local_window_to_utc_iso, resolve_tz_name
 from app.services.t2_media import art_image_path, choice_image_path
 
+repo: Repository = None  # set by register_t2_handlers
+settings: Settings = None  # set by register_t2_handlers
+
 
 def _now_utc_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -213,7 +216,10 @@ async def _send_t2_open_final(bot: Bot, chat_id: int, row: dict, tasks: dict, sh
     await bot.send_message(chat_id, text, reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
 
 
-def register_t2_handlers(app: Application, repo: Repository, settings: Settings, state: T2State) -> None:
+def register_t2_handlers(app: Application, _repo: Repository, _settings: Settings, state: T2State) -> None:
+    global repo, settings
+    repo = _repo
+    settings = _settings
     app.add_handler(CallbackQueryHandler(_t2_callback_o, pattern=re.compile(r"^t2:o:(\d+)$")))
     app.add_handler(CallbackQueryHandler(_t2_callback_sk, pattern=re.compile(r"^t2:sk:(\d+)$")))
     app.add_handler(CallbackQueryHandler(_t2_callback_s, pattern=re.compile(r"^t2:s:(\d+)$")))
@@ -276,13 +282,13 @@ async def _t2_callback_o(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     tasks = get_tasks()
     show_skip = await _t2_get_skip(row, uid)
     if st == "art":
-        await _send_t2_open_art(query.bot, chat_id, row, tasks, show_skip)
+        await _send_t2_open_art(context.bot, chat_id, row, tasks, show_skip)
     elif st == "life_theme":
-        await _send_t2_open_life(query.bot, chat_id, row, tasks, show_skip)
+        await _send_t2_open_life(context.bot, chat_id, row, tasks, show_skip)
     elif st == "choice":
-        await _send_t2_open_choice(query.bot, chat_id, row, tasks, show_skip)
+        await _send_t2_open_choice(context.bot, chat_id, row, tasks, show_skip)
     elif st == "final":
-        await _send_t2_open_final(query.bot, chat_id, row, tasks, show_skip)
+        await _send_t2_open_final(context.bot, chat_id, row, tasks, show_skip)
     else:
         await query.answer("Неизвестный тип", show_alert=True)
         return
@@ -334,7 +340,7 @@ async def _t2_callback_s(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     t2_state.art_timers[uid] = asyncio.create_task(
         start_task_timer(
             chat_id=query.message.chat.id,
-            bot=query.bot,
+            bot=context.bot,
             duration_seconds=total_sec,
             task_name=f"T2 #{row_id}",
             notify_countdown=False,
