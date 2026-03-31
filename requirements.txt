@@ -1,8 +1,8 @@
-python-telegram-bot[webhooks]==20.7
-python-dotenv==1.0.1
-apscheduler==3.10.4
+python-telegram-bot[webhooks]>=20.7
+python-dotenv
+apscheduler>=3.10
 aiohttp
 aiosqlite
 geopy
-timezonefinder==5.1.1
+timezonefinder
 pygame
