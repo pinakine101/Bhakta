@@ -4,5 +4,5 @@ apscheduler==3.10.4
 aiohttp
 aiosqlite
 geopy
-timezonefinder
+timezonefinder==5.1.1
 pygame
