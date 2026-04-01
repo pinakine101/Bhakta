@@ -652,7 +652,6 @@ async def _run_polling() -> None:
 def main() -> None:
     global repo, application
 
-    print("[BOOT] All env vars:", {k: v for k, v in os.environ.items()}, flush=True)
     settings = get_settings()
     asyncio.run(init_db(DB_PATH))
     repo = Repository(DB_PATH)
