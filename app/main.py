@@ -578,6 +578,24 @@ async def health(request: web.Request) -> web.Response:
     return web.Response(text="OK")
 
 
+async def _init_with_retry(bot_obj, max_retries=5, base_delay=2.0) -> bool:
+    import telegram.error
+    for attempt in range(max_retries):
+        try:
+            await bot_obj.initialize()
+            print(f"[BOOT] Bot initialized (attempt {attempt+1})", flush=True, file=sys.stderr)
+            return True
+        except telegram.error.InvalidToken:
+            print(f"[BOOT] InvalidToken — token is wrong, aborting", flush=True, file=sys.stderr)
+            return False
+        except Exception as e:
+            print(f"[BOOT] Bot initialize attempt {attempt+1}/{max_retries} failed: {e}", flush=True, file=sys.stderr)
+            if attempt < max_retries - 1:
+                await asyncio.sleep(base_delay * (2 ** attempt))
+    print("[BOOT] Bot initialize failed after retries, continuing without full init", flush=True, file=sys.stderr)
+    return False
+
+
 async def on_startup(app: web.Application) -> None:
     global background_task
     webhook_url_env = os.environ.get("RENDER_EXTERNAL_URL") or os.environ.get("WEBHOOK_URL")
@@ -586,10 +604,13 @@ async def on_startup(app: web.Application) -> None:
     webhook_url = f"{webhook_url_env.rstrip('/')}/webhook"
     print(f"[BOOT] Setting webhook to {webhook_url}", flush=True, file=sys.stderr)
     if application:
-        await application.initialize()
-        await application.start()
-        await application.bot.set_webhook(webhook_url)
-        print("[BOOT] PTB initialized and webhook set", flush=True, file=sys.stderr)
+        init_ok = await _init_with_retry(application.bot)
+        if init_ok:
+            await application.start()
+            await application.bot.set_webhook(webhook_url)
+            print("[BOOT] PTB initialized and webhook set", flush=True, file=sys.stderr)
+        else:
+            print("[BOOT] Skipping PTB init — will process updates without full PTB state", flush=True, file=sys.stderr)
         background_task = asyncio.create_task(t1_background_loop(application.bot, repo, settings))
         print("[BOOT] Background task started", flush=True, file=sys.stderr)
     else:
