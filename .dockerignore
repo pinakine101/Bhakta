@@ -1,0 +1,10 @@
+__pycache__
+*.pyc
+*.pyo
+.git
+.venv
+venv
+*.egg-info
+.pytest_cache
+.mcp-server
+nul

@@ -15,6 +15,8 @@ COPY app/requirements.txt ./app/
 RUN pip install -r requirements.txt && pip install -r ./app/requirements.txt
 
 COPY . ./
+RUN find /app/src -name "*.pyc" -delete && \
+    find /app/src -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
 
 ENV PORT=8080
 EXPOSE $PORT
