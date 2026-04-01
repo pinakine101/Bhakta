@@ -20,13 +20,11 @@ from app.t2_bot import deliver_t2_slot
 
 repo: Repository = None  # set by register_t1_handlers
 settings: Settings = None  # set by register_t1_handlers
-from app.timer import DONE_SOUND, START_SOUND, play_sound, start_task_timer
 from app.services.t1_runtime import (
     T1_EVENING_BODY_TEMPLATE,
     T1_EVENING_TITLE,
     T1_MORNING_BODY,
     T1_MORNING_TITLE,
-    evening_breath_duration_sec,
     load_schedule,
     local_window_to_utc_iso,
     resolve_tz_name,
@@ -205,7 +203,6 @@ async def _t1_callback_ms(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     uid = update.effective_user.id
     pr = await repo.get_t1_progress(uid)
     target = int(pr["morning_seconds"]) if pr else 20
-    play_sound(START_SOUND)
     t1_state.morning_start[uid] = (row_id, datetime.now(timezone.utc), target)
     mm, ss = divmod(target, 60)
     await query.message.reply_text(f"<i>⏱ Таймер: {mm:02d}:{ss:02d}</i>", parse_mode="HTML")
@@ -233,7 +230,6 @@ async def _t1_callback_md(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if rid != row_id:
         await query.answer("Другое задание", show_alert=True)
         return
-    play_sound(DONE_SOUND)
     actual = int((datetime.now(timezone.utc) - started).total_seconds())
     if actual < 0:
         actual = 0
@@ -290,25 +286,8 @@ async def _t1_callback_es(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.answer("Ошибка", show_alert=True)
         return
     uid = update.effective_user.id
-    rhythm = row.get("evening_rhythm") or "4:4:6:4"
-    cycles = int(row.get("evening_cycles") or 5)
-    duration = evening_breath_duration_sec(rhythm, cycles)
-    await _cancel_timer_safe(t1_state.evening_timers.pop(uid, None))
-
     t1_state.evening_phase[uid] = row_id
-    t1_state.evening_timers[uid] = asyncio.create_task(
-        start_task_timer(
-            chat_id=query.message.chat.id,
-            bot=context.bot,
-            duration_seconds=duration,
-            task_name=f"T1 вечер #{row_id}",
-            notify_countdown=False,
-            send_start_message=False,
-        )
-    )
-    mm, ss = divmod(duration, 60)
-    await query.message.reply_text(f"<i>⏱ Таймер: {mm:02d}:{ss:02d}</i>", parse_mode="HTML")
-    await query.answer("Таймер запущен")
+    await query.answer()
 
 
 async def _t1_callback_ed(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -329,7 +308,6 @@ async def _t1_callback_ed(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
     await _cancel_timer_safe(t1_state.evening_timers.pop(uid, None))
     t1_state.evening_phase.pop(uid, None)
-    play_sound(DONE_SOUND)
     t1_state.pending_evening_word[uid] = row_id
     await query.message.reply_text("Напишите одно слово.", reply_markup=ReplyKeyboardRemove())
     await query.answer()

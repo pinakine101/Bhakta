@@ -14,7 +14,6 @@ from telegram.ext import Application, CallbackQueryHandler, MessageHandler, filt
 
 from app.config import Settings
 from app.db.repository import Repository
-from app.timer import DONE_SOUND, START_SOUND, play_sound, start_task_timer
 from app.services.schedule_loader import (
     course_calendar_day,
     get_tasks,
@@ -356,21 +355,8 @@ async def _t2_callback_s(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     art = _art_by_id(tasks, int(row["task_id"]))
     dm = int((art or {}).get("duration_min") or 2)
     await _cancel_timer_safe(t2_state.art_timers.pop(uid, None))
-    total_sec = dm * 60
     t2_state.art_session[uid] = (row_id, datetime.now(timezone.utc))
-    t2_state.art_timers[uid] = asyncio.create_task(
-        start_task_timer(
-            chat_id=query.message.chat.id,
-            bot=context.bot,
-            duration_seconds=total_sec,
-            task_name=f"T2 #{row_id}",
-            notify_countdown=False,
-            send_start_message=False,
-        )
-    )
-    mm, ss = divmod(total_sec, 60)
-    await query.message.reply_text(f"<i>⏱ Таймер: {mm:02d}:{ss:02d}</i>", parse_mode="HTML")
-    await query.answer("Таймер запущен")
+    await query.answer()
 
 
 async def _t2_callback_d(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -390,7 +376,6 @@ async def _t2_callback_d(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not ctx or ctx[0] != row_id:
         await query.answer("Сначала нажми «Начать»", show_alert=True)
         return
-    play_sound(DONE_SOUND)
     actual = int((datetime.now(timezone.utc) - ctx[1]).total_seconds())
     if actual < 0:
         actual = 0
@@ -411,7 +396,6 @@ async def _t2_callback_ld(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if row.get("t2_subtype") != "life_theme":
         await query.answer("Ошибка", show_alert=True)
         return
-    play_sound(DONE_SOUND)
     t2_state.pending[uid] = T2Pending(row_id=row_id, step="life_text")
     await query.message.reply_text("Напиши свои размышления.", reply_markup=ReplyKeyboardRemove())
     await query.answer()
@@ -429,7 +413,6 @@ async def _t2_callback_fd(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if row.get("t2_subtype") != "final":
         await query.answer("Ошибка", show_alert=True)
         return
-    play_sound(DONE_SOUND)
     t2_state.pending[uid] = T2Pending(row_id=row_id, step="final_word")
     await query.message.reply_text("Напиши одно слово.", reply_markup=ReplyKeyboardRemove())
     await query.answer()

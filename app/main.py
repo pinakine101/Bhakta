@@ -31,7 +31,6 @@ from telegram.ext import (
 from app.config import Settings, get_settings
 from app.db.database import init_db
 from app.db.repository import Repository
-from app.services.profile import detect_timezone_by_location, is_valid_birth_date
 from app.services.schedule_loader import (
     course_calendar_day,
     get_tasks,
@@ -40,9 +39,17 @@ from app.services.schedule_loader import (
 )
 from app.services.word_analysis import build_default_word_dict_rows
 from app.services.zodiac import get_age_group, get_zodiac_and_element
-from app.timer import DONE_SOUND, START_SOUND, play_sound
 from app.t1_bot import T1State, register_t1_handlers, send_daily_plan_now, t1_background_loop
 from app.t2_bot import T2State, register_t2_handlers
+
+
+def _is_valid_birth_date(raw_value: str) -> bool:
+    from datetime import datetime
+    try:
+        datetime.strptime(raw_value, "%d.%m.%Y")
+        return True
+    except ValueError:
+        return False
 
 load_dotenv()
 DB_PATH = os.path.join(os.getcwd(), "cont_bot.sqlite3")
@@ -182,7 +189,6 @@ async def send_today_tasks_list(update: Update, context: ContextTypes.DEFAULT_TY
 class OnboardingStep(str, Enum):
     WAIT_NAME = "wait_name"
     WAIT_BIRTH_DATE = "wait_birth_date"
-    WAIT_LOCATION = "wait_location"
 
 
 @dataclass
@@ -200,7 +206,7 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await repo.ensure_user(user_id, update.effective_user.username or "anonymous")
     await repo.ensure_analysis_profile(user_id)
     profile = await repo.get_user_profile(user_id)
-    if profile and profile.get("full_name") and profile.get("birth_date") and profile.get("location"):
+    if profile and profile.get("full_name") and profile.get("birth_date"):
         await update.effective_message.reply_text(
             "С возвращением! Профиль уже заполнен.\n\n"
             + build_practice_ready_message(profile.get("timezone"), settings.timezone),
@@ -425,7 +431,6 @@ async def t3_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await query.message.reply_text(text, reply_markup=kb)
         return
     if action == "d":
-        play_sound(DONE_SOUND)
         now_s = datetime.now().isoformat(sep=" ", timespec="seconds")
         await repo.complete_scheduled_task(row_id, 3, None, now_s)
         await query.message.reply_text("Ваши данные внесены", reply_markup=continue_keyboard())
@@ -479,14 +484,12 @@ async def t4_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await query.message.reply_text(get_t4_challenge_text(t4_obj.get("description", "")), reply_markup=kb)
         return
     if action == "a":
-        play_sound(START_SOUND)
         kb = InlineKeyboardMarkup([[
             InlineKeyboardButton(text="Готово", callback_data=f"t4:d:{row_id}")
         ]])
         await query.message.reply_text("Выполни задание и нажми «Готово».", reply_markup=kb)
         return
     if action == "d":
-        play_sound(DONE_SOUND)
         now_s = datetime.now().isoformat(sep=" ", timespec="seconds")
         await repo.complete_scheduled_task(row_id, 4, None, now_s)
         await query.message.reply_text("Ваши данные внесены", reply_markup=continue_keyboard())
@@ -516,7 +519,7 @@ async def onboarding_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     if current.step == OnboardingStep.WAIT_BIRTH_DATE:
-        if not is_valid_birth_date(raw_text):
+        if not _is_valid_birth_date(raw_text):
             await update.effective_message.reply_text("Неверный формат даты. Используйте ДД.ММ.ГГГГ")
             return
         current.birth_date = raw_text
@@ -527,24 +530,18 @@ async def onboarding_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await repo.update_user_v2(user_id, age_group=ag, zodiac_sign=sign, element=elem)
         except ValueError:
             pass
-        current.step = OnboardingStep.WAIT_LOCATION
-        onboarding_state[user_id] = current
-        await update.effective_message.reply_text("Введите место рождения (город, страна), например: Москва, Россия")
-        return
-
-    if current.step == OnboardingStep.WAIT_LOCATION:
-        timezone_name = detect_timezone_by_location(raw_text, settings.timezone)
+        timezone_name = settings.timezone
         await repo.update_user_profile(
             telegram_id=user_id,
             full_name=current.full_name or "",
             birth_date=current.birth_date or "",
-            location=raw_text,
+            location="",
             timezone=timezone_name,
         )
         onboarding_state.pop(user_id, None)
         await repo.ensure_analysis_profile(user_id)
         await update.effective_message.reply_text(
-            f"Профиль сохранен.\nЧасовой пояс определен: {timezone_name}\n\n"
+            "Профиль сохранен.\n\n"
             + HOW_IT_WORKS_TEXT
             + "\n\n"
             + build_practice_ready_message(timezone_name, settings.timezone),
