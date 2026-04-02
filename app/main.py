@@ -549,6 +549,26 @@ async def onboarding_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         return
 
+    if current.step.value == "wait_location":
+        timezone_name = settings.timezone
+        await repo.update_user_profile(
+            telegram_id=user_id,
+            full_name=current.full_name or "",
+            birth_date=current.birth_date or "",
+            location=raw_text,
+            timezone=timezone_name,
+        )
+        onboarding_state.pop(user_id, None)
+        await repo.ensure_analysis_profile(user_id)
+        await update.effective_message.reply_text(
+            "Профиль сохранен.\n\n"
+            + HOW_IT_WORKS_TEXT
+            + "\n\n"
+            + build_practice_ready_message(timezone_name, settings.timezone),
+            reply_markup=practice_keyboard(),
+        )
+        return
+
 
 async def handle_webhook(request: web.Request) -> web.Response:
     if request.method == "GET":
