@@ -438,6 +438,93 @@ async def deliver_t1_evening_slot(
         pass
 
 
+async def _send_daily_tasks_digest(
+    bot: Bot,
+    repo: Repository,
+    settings: Settings,
+    uid: int,
+    tz: str,
+    age_group: str,
+    today: date,
+    include_already_sent: bool = False,
+) -> None:
+    now_iso = _now_utc_iso()
+    tz_name = resolve_tz_name(tz, settings.timezone)
+    today_s = today.isoformat()
+
+    sched = load_schedule(age_group)
+    max_ix = max(0, len(sched["t1_evening_rhythms"]) - 1)
+    urow = await repo.get_user_row_for_t1(uid)
+    cs = (urow or {}).get("course_start_date")
+    try:
+        course_start = date.fromisoformat(cs) if cs else today
+    except ValueError:
+        course_start = today
+    day_ix = schedule_day_index(course_start, today, max_ix)
+    rhythm, cycles = t1_evening_params_for_day(sched, day_ix)
+
+    t1_ws, t1_we = local_window_to_utc_iso(today, time(6, 0), time(9, 0), tz_name)
+    await repo.upsert_t1_daily_task(uid, "T1_morning", today_s, t1_ws, t1_we, 0)
+
+    t1e_ws, t1e_we = local_window_to_utc_iso(today, time(21, 0), time(23, 59), tz_name)
+    await repo.upsert_t1_daily_task(uid, "T1_evening", today_s, t1e_ws, t1e_we, 0, rhythm, cycles)
+
+    schedule = get_schedule(age_group)
+    cal_day = course_calendar_day(course_start, today)
+
+    assign = t2_assignment_for_calendar_day(schedule, cal_day)
+    if assign:
+        subtype = map_schedule_t2_type_to_subtype(str(assign["type"]))
+        tid = assign.get("id")
+        task_id_val = int(tid) if tid is not None else 0
+        t2_ws, t2_we = local_window_to_utc_iso(today, time(12, 0), time(21, 0), tz_name)
+        await repo.upsert_t2_daily_task(uid, today_s, t2_ws, t2_we, task_id_val, subtype)
+
+    t3_assign = next((x for x in schedule.get("t3_assignments", []) if int(x.get("day") or 0) == cal_day), None)
+    if t3_assign:
+        t3_id = int(t3_assign.get("id") or 0)
+        t3_ws, t3_we = local_window_to_utc_iso(today, time(15, 0), time(21, 0), tz_name)
+        await repo.upsert_scheduled_task(uid, "T3", today_s, "", t3_id, t3_ws, t3_we, None)
+
+    t4_list = schedule.get("t4_assignments", [])
+    t4_id = int(t4_list[cal_day - 1]) if 0 < cal_day <= len(t4_list) else 0
+    if t4_id:
+        t4_start_local = datetime.combine(today, _t4_daily_start_time(uid, today))
+        t4_end_local = t4_start_local + timedelta(hours=1)
+        t4_ws, t4_we = local_window_to_utc_iso(today, t4_start_local.time(), t4_end_local.time(), tz_name)
+        await repo.upsert_scheduled_task(uid, "T4", today_s, "", t4_id, t4_ws, t4_we, None)
+
+    rows = await repo.list_scheduled_for_date(uid, today_s)
+    buttons: list[list[InlineKeyboardButton]] = []
+    mark_rows: list[int] = []
+
+    for r in rows:
+        t = str(r["task_type"])
+        rid = int(r["id"])
+        ws = str(r.get("window_start") or "")
+        we = str(r.get("window_end") or "")
+        if not _within_window_utc_range(ws, we):
+            continue
+        if t == "T1_morning":
+            buttons.append([InlineKeyboardButton(text="Т1 утро", callback_data=f"t1:mo:{rid}")])
+            mark_rows.append(rid)
+        elif t == "T1_evening":
+            buttons.append([InlineKeyboardButton(text="Т1 вечер", callback_data=f"t1:eo:{rid}")])
+            mark_rows.append(rid)
+        elif t == "T2":
+            buttons.append([InlineKeyboardButton(text="Т2", callback_data=f"t2:o:{rid}")])
+            mark_rows.append(rid)
+        elif t == "T3":
+            buttons.append([InlineKeyboardButton(text="Т3", callback_data=f"t3:o:{rid}")])
+            mark_rows.append(rid)
+        elif t == "T4":
+            buttons.append([InlineKeyboardButton(text="Т4", callback_data=f"t4:o:{rid}")])
+            mark_rows.append(rid)
+
+    if buttons:
+        await bot.send_message(uid, "Активные задания:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+        for row_id in mark_rows:
+            await repo.mark_scheduled_sent(row_id, now_iso)
 
 
 def _format_window_local(win_start: str, win_end: str, tz_name: str) -> str:
@@ -453,6 +540,15 @@ def _last_day_of_month(d: date) -> date:
     if d.month == 12:
         return date(d.year, 12, 31)
     return date(d.year, d.month + 1, 1) - timedelta(days=1)
+
+
+async def send_daily_plan_now(bot: Bot, repo: Repository, settings: Settings, uid: int) -> None:
+    u = await repo.get_user_row_for_t1(uid)
+    if not u or not u.get("age_group"):
+        return
+    tz = resolve_tz_name(u.get("timezone"), settings.timezone)
+    today = datetime.now(ZoneInfo(tz)).date()
+    await _send_daily_tasks_digest(bot, repo, settings, uid, tz, u["age_group"], today, include_already_sent=True)
 
 
 async def _maybe_send_weekly_report(
@@ -523,6 +619,7 @@ async def t1_scheduler_tick(bot: Bot, repo: Repository, settings: Settings) -> N
             await repo.ensure_course_start_date_today(uid, today_s)
 
         await repo.expire_pending_tasks(uid, now_iso)
+        await _send_daily_tasks_digest(bot, repo, settings, uid, tz, ag, today)
         await _maybe_send_weekly_report(bot, repo, uid, now_local)
         await _maybe_send_monthly_stage_notice(bot, repo, uid, now_local)
 

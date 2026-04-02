@@ -39,7 +39,7 @@ from app.services.schedule_loader import (
 )
 from app.services.word_analysis import build_default_word_dict_rows
 from app.services.zodiac import get_age_group, get_zodiac_and_element
-from app.t1_bot import T1State, register_t1_handlers, t1_background_loop
+from app.t1_bot import T1State, register_t1_handlers, send_daily_plan_now, t1_background_loop
 from app.t2_bot import T2State, register_t2_handlers
 
 
@@ -500,6 +500,7 @@ async def onboarding_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
             + HOW_IT_WORKS_TEXT,
             reply_markup=continue_keyboard(),
         )
+        await send_daily_plan_now(context.bot, repo, settings, user_id)
         return
 
     if current.step.value == "wait_location":
@@ -518,6 +519,7 @@ async def onboarding_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
             + HOW_IT_WORKS_TEXT,
             reply_markup=continue_keyboard(),
         )
+        await send_daily_plan_now(context.bot, repo, settings, user_id)
         return
 
 
