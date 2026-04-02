@@ -39,7 +39,7 @@ from app.services.schedule_loader import (
 )
 from app.services.word_analysis import build_default_word_dict_rows
 from app.services.zodiac import get_age_group, get_zodiac_and_element
-from app.t1_bot import T1State, register_t1_handlers, send_daily_plan_now, t1_background_loop
+from app.t1_bot import T1State, register_t1_handlers, t1_background_loop
 from app.t2_bot import T2State, register_t2_handlers
 
 
@@ -53,7 +53,6 @@ def _is_valid_birth_date(raw_value: str) -> bool:
 
 load_dotenv()
 DB_PATH = os.path.join(os.getcwd(), "cont_bot.sqlite3")
-PRACTICE_START = "practice:start"
 TASKS_TODAY = "tasks:today"
 
 t1_state = T1State()
@@ -74,48 +73,34 @@ def resolve_tz_name(tz_name: str | None, fallback: str) -> str:
         return fallback
 
 
-def build_practice_ready_message(tz_name: str, fallback_tz: str) -> str:
-    return (
-        "После нажатия «Начать прохождение» ты сразу получишь список заданий на текущие сутки "
-        "без привязки к времени внутри дня.\n\n"
-        "Подтверди готовность кнопкой ниже."
-    )
+HOW_IT_WORKS_TEXT = """Бот помогает выстроить ежедневную практику созерцания. Задания приходят автоматически в нужное время — остаётся нажимать кнопки и иногда писать слово.
 
+ ТИПЫ ЗАДАНИЙ
 
-HOW_IT_WORKS_TEXT = """Бот помогает выстроить ежедневную практику созерцания. Задания приходят сами — остаётся нажимать кнопки и иногда писать слово.
+ Т1 — ежедневно: утром — концентрация на точке, вечером — дыхание в ритме.
+ Т2 — желательные: искусство, темы жизни, выборы, итог месяца.
+ Т3 — рекомендации: статьи, навыки, творчество, прогулки.
+ Т4 — вызовы: короткие телесные упражнения в случайное время.
 
-ТИПЫ ЗАДАНИЙ
+ КАК ВЫПОЛНЯТЬ
+ Бот присылает кнопку с названием задания.
+ Нажимаете — появляется описание и кнопка «Готово».
+ Делаете практику, нажимаете «Готово».
+ Бот отвечает: «Ваши данные внесены». Если задание требует слово — запросит после.
 
-Т1 — ежедневно: утром — концентрация на точке, вечером — дыхание в ритме.
-Т2 — желательные: искусство, темы жизни, выборы, итог месяца.
-Т3 — рекомендации: статьи, навыки, творчество, прогулки.
-Т4 — вызовы: короткие телесные упражнения в случайное время.
+ БАЛЫ И ОТЧЕТ
+ За каждое выполненное задание начисляются баллы.
+ Раз в неделю бот присылает отчёт: сколько баллов набрано, какой процент от недельного максимума.
+ Рейтингов нет — это ваша личная статистика.
 
-КАК ВЫПОЛНЯТЬ
-Бот присылает кнопку с названием задания.
-Нажимаете — появляется описание и кнопки «Начать» / «Готово».
-Делаете практику, нажимаете «Готово».
-Бот отвечает: «Ваши данные внесены». Если задание требует слово — запросит после.
-
-БАЛЫ И ОТЧЕТ
-За каждое выполненное задание начисляются баллы.
-Раз в неделю бот присылает отчёт: сколько баллов набрано, какой процент от недельного максимума.
-Рейтингов нет — это ваша личная статистика.
-
-ВАЖНО
-Задания живут ограниченное время. Не успели — пропадает, но вы всегда можете вернуться к следующему.
-Бот не учитель и не наставник. Он просто напоминает и фиксирует. Остальное — тишина и вы."""
+ ВАЖНО
+ Задания живут ограниченное время. Не успели — пропадает, но вы всегда можете вернуться к следующему.
+ Бот не учитель и не наставник. Он просто напоминает и фиксирует. Остальное — тишина и вы."""
 
 
 def continue_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[
         InlineKeyboardButton(text="Продолжить", callback_data=TASKS_TODAY)
-    ]])
-
-
-def practice_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([[
-        InlineKeyboardButton(text="Начать прохождение", callback_data=PRACTICE_START)
     ]])
 
 
@@ -208,9 +193,8 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     profile = await repo.get_user_profile(user_id)
     if profile and profile.get("full_name") and profile.get("birth_date"):
         await update.effective_message.reply_text(
-            "С возвращением! Профиль уже заполнен.\n\n"
-            + build_practice_ready_message(profile.get("timezone"), settings.timezone),
-            reply_markup=practice_keyboard(),
+            "С возвращением!",
+            reply_markup=continue_keyboard(),
         )
         return
 
@@ -338,35 +322,6 @@ async def recalc_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         return
     updated = await repo.recalc_word_dictionary_links()
     await update.effective_message.reply_text(f"Пересчет выполнен. Обновлено строк: {updated}")
-
-
-async def practice_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    await query.answer()
-    uid = query.from_user.id
-    urow = await repo.get_user_row_for_t1(uid)
-    tz = resolve_tz_name((urow or {}).get("timezone"), settings.timezone)
-    now_local = datetime.now(ZoneInfo(tz))
-    today_s = now_local.date().isoformat()
-    already = bool((urow or {}).get("first_exercise_sent"))
-    if not already:
-        await repo.mark_first_exercise_sent(uid, today_s)
-
-    refreshed = await repo.get_user_row_for_t1(uid)
-    if refreshed and not refreshed.get("age_group") and refreshed.get("birth_date"):
-        try:
-            bd = datetime.strptime(str(refreshed["birth_date"]), "%d.%m.%Y").date()
-            ag = get_age_group(bd)
-            sign, elem = get_zodiac_and_element(bd)
-            await repo.update_user_v2(uid, age_group=ag, zodiac_sign=sign, element=elem)
-        except ValueError:
-            pass
-        refreshed = await repo.get_user_row_for_t1(uid)
-
-    if refreshed and refreshed.get("age_group"):
-        await repo.ensure_t1_progress(uid, refreshed["age_group"])
-
-    await send_daily_plan_now(context.bot, repo, settings, uid)
 
 
 async def tasks_today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -542,10 +497,8 @@ async def onboarding_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await repo.ensure_analysis_profile(user_id)
         await update.effective_message.reply_text(
             "Профиль сохранен.\n\n"
-            + HOW_IT_WORKS_TEXT
-            + "\n\n"
-            + build_practice_ready_message(timezone_name, settings.timezone),
-            reply_markup=practice_keyboard(),
+            + HOW_IT_WORKS_TEXT,
+            reply_markup=continue_keyboard(),
         )
         return
 
@@ -562,10 +515,8 @@ async def onboarding_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await repo.ensure_analysis_profile(user_id)
         await update.effective_message.reply_text(
             "Профиль сохранен.\n\n"
-            + HOW_IT_WORKS_TEXT
-            + "\n\n"
-            + build_practice_ready_message(timezone_name, settings.timezone),
-            reply_markup=practice_keyboard(),
+            + HOW_IT_WORKS_TEXT,
+            reply_markup=continue_keyboard(),
         )
         return
 
@@ -687,7 +638,6 @@ def main() -> None:
     application.add_handler(CommandHandler("review", review_cmd))
     application.add_handler(CommandHandler("recalc", recalc_cmd))
 
-    application.add_handler(CallbackQueryHandler(practice_start, pattern=f"^{PRACTICE_START}$"))
     application.add_handler(CallbackQueryHandler(tasks_today, pattern=f"^{TASKS_TODAY}$"))
     application.add_handler(CallbackQueryHandler(t3_callbacks, pattern="^t3:"))
     application.add_handler(CallbackQueryHandler(t4_callbacks, pattern="^t4:"))
