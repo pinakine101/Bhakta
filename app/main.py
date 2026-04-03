@@ -39,7 +39,7 @@ from app.services.schedule_loader import (
 )
 from app.services.word_analysis import build_default_word_dict_rows
 from app.services.zodiac import get_age_group, get_zodiac_and_element
-from app.t1_bot import T1State, register_t1_handlers, t1_background_loop
+from app.t1_bot import T1State, register_t1_handlers, t1_background_loop, _send_daily_tasks_digest
 from app.t2_bot import T2State, register_t2_handlers
 
 
@@ -137,27 +137,12 @@ def _task_open_callback(task_type: str, row_id: int) -> str | None:
 async def send_today_tasks_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
     urow = await repo.get_user_row_for_t1(uid)
-    tz = resolve_tz_name((urow or {}).get("timezone"), settings.timezone)
-    today_s = datetime.now(ZoneInfo(tz)).date().isoformat()
-    rows = await repo.list_scheduled_for_date(uid, today_s)
-    kb_rows: list[list[InlineKeyboardButton]] = []
-    for r in rows:
-        done = bool(r.get("completed"))
-        skipped = bool(r.get("skipped"))
-        if done or skipped:
-            continue
-        title = _task_title(str(r["task_type"]), r.get("t2_subtype"))
-        cb = _task_open_callback(str(r["task_type"]), int(r["id"]))
-        if cb:
-            kb_rows.append([InlineKeyboardButton(text=title, callback_data=cb)])
-
-    if not kb_rows:
-        await update.effective_message.reply_text("На сегодня заданий нет.")
-    else:
-        await update.effective_message.reply_text(
-            "Активные задания:",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows),
-        )
+    if not urow or not urow.get("age_group"):
+        await update.effective_message.reply_text("Сначала заполни профиль — /start")
+        return
+    tz = resolve_tz_name(urow.get("timezone"), settings.timezone)
+    today = datetime.now(ZoneInfo(tz)).date()
+    await _send_daily_tasks_digest(context.bot, repo, settings, uid, tz, urow["age_group"], today, include_already_sent=True)
 
 
 class OnboardingStep(str, Enum):
