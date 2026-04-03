@@ -136,9 +136,11 @@ def _task_open_callback(task_type: str, row_id: int) -> str | None:
 async def send_today_tasks_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
     urow = await repo.get_user_row_for_t1(uid)
+    print(f"[TASKS] uid={uid} urow={urow}", flush=True)
     tz = resolve_tz_name((urow or {}).get("timezone"), settings.timezone)
     today_s = datetime.now(ZoneInfo(tz)).date().isoformat()
     rows = await repo.list_scheduled_for_date(uid, today_s)
+    print(f"[TASKS] uid={uid} rows={len(rows)} today={today_s}", flush=True)
     kb_rows: list[list[InlineKeyboardButton]] = []
     for r in rows:
         done = bool(r.get("completed"))
