@@ -505,7 +505,7 @@ async def _send_daily_tasks_digest(
         we = str(r.get("window_end") or "")
         if not include_already_sent and r.get("sent_at"):
             continue
-        if not _within_window_utc_range(ws, we):
+        if not include_already_sent and not _within_window_utc_range(ws, we):
             continue
         if t == "T1_morning":
             buttons.append([InlineKeyboardButton(text="Т1 утро", callback_data=f"t1:mo:{rid}")])
