@@ -40,6 +40,7 @@ from app.services.schedule_loader import (
 from app.services.word_analysis import build_default_word_dict_rows
 from app.services.zodiac import get_age_group, get_zodiac_and_element
 from app.t1_bot import T1State, register_t1_handlers, t1_background_loop
+from app.t1_bot import _send_daily_tasks_digest as send_daily_tasks
 from app.t2_bot import T2State, register_t2_handlers
 
 
@@ -143,6 +144,13 @@ async def send_today_tasks_list(update: Update, context: ContextTypes.DEFAULT_TY
     tz = resolve_tz_name(urow.get("timezone"), settings.timezone)
     today = datetime.now(ZoneInfo(tz)).date()
     today_s = today.isoformat()
+    try:
+        await send_daily_tasks(
+            application.bot, repo, settings, uid,
+            tz, urow["age_group"], today, include_already_sent=True,
+        )
+    except Exception:
+        pass
     rows = await repo.list_scheduled_for_date(uid, today_s)
     kb_rows: list[list[InlineKeyboardButton]] = []
     for r in rows:
@@ -490,6 +498,15 @@ async def onboarding_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await repo.ensure_analysis_profile(user_id)
         today_s = datetime.now(ZoneInfo(settings.timezone)).date().isoformat()
         await repo.mark_first_exercise_sent(user_id, today_s)
+        try:
+            tz_name = resolve_tz_name(settings.timezone, settings.timezone)
+            today = datetime.now(ZoneInfo(tz_name)).date()
+            await send_daily_tasks(
+                application.bot, repo, settings, user_id,
+                tz_name, ag, today, include_already_sent=True,
+            )
+        except Exception:
+            pass
         await update.effective_message.reply_text(
             "Профиль сохранен.\n\n"
             + HOW_IT_WORKS_TEXT,
@@ -648,10 +665,10 @@ def main() -> None:
     application.add_handler(CallbackQueryHandler(t3_callbacks, pattern="^t3:"))
     application.add_handler(CallbackQueryHandler(t4_callbacks, pattern="^t4:"))
 
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, onboarding_handler))
-
     register_t1_handlers(application, repo, settings, t1_state)
     register_t2_handlers(application, repo, settings, t2_state)
+
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, onboarding_handler))
 
     webhook_url = os.environ.get("RENDER_EXTERNAL_URL") or os.environ.get("WEBHOOK_URL")
     print(f"[BOOT] webhook_url='{webhook_url}' RENDER_EXTERNAL_URL='{os.environ.get('RENDER_EXTERNAL_URL')}' WEBHOOK_URL='{os.environ.get('WEBHOOK_URL')}'", flush=True, file=sys.stderr)
