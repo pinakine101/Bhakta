@@ -39,7 +39,7 @@ from app.services.schedule_loader import (
 )
 from app.services.word_analysis import build_default_word_dict_rows
 from app.services.zodiac import get_age_group, get_zodiac_and_element
-from app.t1_bot import T1State, register_t1_handlers, t1_background_loop, _send_daily_tasks_digest
+from app.t1_bot import T1State, register_t1_handlers, t1_background_loop
 from app.t2_bot import T2State, register_t2_handlers
 
 
@@ -142,7 +142,31 @@ async def send_today_tasks_list(update: Update, context: ContextTypes.DEFAULT_TY
         return
     tz = resolve_tz_name(urow.get("timezone"), settings.timezone)
     today = datetime.now(ZoneInfo(tz)).date()
-    await _send_daily_tasks_digest(context.bot, repo, settings, uid, tz, urow["age_group"], today, include_already_sent=True)
+    today_s = today.isoformat()
+    rows = await repo.list_scheduled_for_date(uid, today_s)
+    kb_rows: list[list[InlineKeyboardButton]] = []
+    for r in rows:
+        done = bool(r.get("completed"))
+        skipped = bool(r.get("skipped"))
+        if done or skipped:
+            continue
+        ws = str(r.get("window_start") or "")
+        we = str(r.get("window_end") or "")
+        now_utc = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+        if now_utc < ws or now_utc > we:
+            continue
+        title = _task_title(str(r["task_type"]), r.get("t2_subtype"))
+        cb = _task_open_callback(str(r["task_type"]), int(r["id"]))
+        if cb:
+            kb_rows.append([InlineKeyboardButton(text=title, callback_data=cb)])
+
+    if not kb_rows:
+        await update.effective_message.reply_text("На сегодня заданий нет.")
+    else:
+        await update.effective_message.reply_text(
+            "Активные задания:",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows),
+        )
 
 
 class OnboardingStep(str, Enum):
