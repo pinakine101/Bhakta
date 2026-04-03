@@ -4,8 +4,7 @@ FROM python:3.11-slim
 WORKDIR /app/src
 
 COPY requirements.txt ./
-COPY app/requirements.txt ./app/
-RUN pip install -r requirements.txt && pip install -r ./app/requirements.txt
+RUN pip install -r requirements.txt
 
 COPY . ./
 RUN find /app/src -name "*.pyc" -delete && \
