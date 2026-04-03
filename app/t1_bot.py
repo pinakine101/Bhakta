@@ -619,7 +619,6 @@ async def t1_scheduler_tick(bot: Bot, repo: Repository, settings: Settings) -> N
             await repo.ensure_course_start_date_today(uid, today_s)
 
         await repo.expire_pending_tasks(uid, now_iso)
-        await _send_daily_tasks_digest(bot, repo, settings, uid, tz, ag, today)
         await _maybe_send_weekly_report(bot, repo, uid, now_local)
         await _maybe_send_monthly_stage_notice(bot, repo, uid, now_local)
 
