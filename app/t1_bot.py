@@ -609,6 +609,12 @@ async def t1_scheduler_tick(bot: Bot, repo: Repository, settings: Settings) -> N
     now_iso = _now_utc_iso()
     users = await repo.list_users_active_course()
     for uid, tz_raw, ag, course_start_s in users:
+        tz = resolve_tz_name(tz_raw, settings.timezone)
+        tz_name = resolve_tz_name(tz_raw, settings.timezone)
+        now_local = datetime.now(ZoneInfo(tz_name))
+        today = now_local.date()
+        today_s = today.isoformat()
+
         if not course_start_s:
             await repo.ensure_course_start_date_today(uid, today_s)
             course_start_s = today_s
