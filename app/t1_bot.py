@@ -503,7 +503,7 @@ async def _send_daily_tasks_digest(
         rid = int(r["id"])
         ws = str(r.get("window_start") or "")
         we = str(r.get("window_end") or "")
-        if r.get("sent_at"):
+        if not include_already_sent and r.get("sent_at"):
             continue
         if not _within_window_utc_range(ws, we):
             continue
