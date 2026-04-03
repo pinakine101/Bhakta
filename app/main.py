@@ -62,6 +62,7 @@ settings = get_settings()
 repo = None
 application: Application | None = None
 background_task: asyncio.Task | None = None
+application_initialized: bool = False
 
 
 def resolve_tz_name(tz_name: str | None, fallback: str) -> str:
@@ -521,14 +522,16 @@ async def handle_webhook(request: web.Request) -> web.Response:
     except Exception:
         return web.Response(status=400, text="Bad Request")
     print(f"[WEBHOOK] POST data: {str(data)[:200]}", flush=True, file=sys.stderr)
-    if application:
-        print(f"[WEBHOOK] application is: {type(application)}", flush=True, file=sys.stderr)
-        update = Update.de_json(data, application.bot)
-        print(f"[WEBHOOK] update_id={update.update_id}, has_msg={bool(update.message)}, has_cb={bool(update.callback_query)}", flush=True, file=sys.stderr)
-        await application.process_update(update)
-        print(f"[WEBHOOK] processed", flush=True, file=sys.stderr)
+    if application and application_initialized:
+        try:
+            update = Update.de_json(data, application.bot)
+            print(f"[WEBHOOK] update_id={update.update_id}, has_msg={bool(update.message)}, has_cb={bool(update.callback_query)}", flush=True, file=sys.stderr)
+            await application.process_update(update)
+            print(f"[WEBHOOK] processed", flush=True, file=sys.stderr)
+        except Exception as e:
+            print(f"[WEBHOOK] error: {e}", flush=True, file=sys.stderr)
     else:
-        print("[WEBHOOK] application is None!", flush=True, file=sys.stderr)
+        print(f"[WEBHOOK] application not ready (app={'None' if not application else 'exists'}, init={application_initialized})", flush=True, file=sys.stderr)
     return web.Response(text="OK")
 
 
@@ -555,20 +558,29 @@ async def _init_with_retry(ptb_app, max_retries=5, base_delay=2.0) -> bool:
 
 
 async def on_startup(app: web.Application) -> None:
-    global background_task
+    global background_task, application_initialized
     webhook_url_env = os.environ.get("RENDER_EXTERNAL_URL") or os.environ.get("WEBHOOK_URL")
     if not webhook_url_env:
-        raise RuntimeError("RENDER_EXTERNAL_URL or WEBHOOK_URL env var is not set")
+        raise RuntimeError("WEBHOOK_URL env var is not set")
     webhook_url = f"{webhook_url_env.rstrip('/')}/webhook"
-    print(f"[BOOT] Setting webhook to {webhook_url}", flush=True, file=sys.stderr)
     if application:
-        init_ok = await _init_with_retry(application)
-        if init_ok:
+        try:
+            await application.initialize()
+            print("[BOOT] PTB Application initialized", flush=True, file=sys.stderr)
+        except Exception as e:
+            print(f"[BOOT] PTB init failed: {e}", flush=True, file=sys.stderr)
+            return
+        try:
             await application.start()
+            print("[BOOT] PTB started", flush=True, file=sys.stderr)
+        except Exception as e:
+            print(f"[BOOT] PTB start failed: {e}", flush=True, file=sys.stderr)
+        try:
             await application.bot.set_webhook(webhook_url)
-            print("[BOOT] PTB initialized and webhook set", flush=True, file=sys.stderr)
-        else:
-            print("[BOOT] PTB init failed — continuing", flush=True, file=sys.stderr)
+            print(f"[BOOT] Webhook set to {webhook_url}", flush=True, file=sys.stderr)
+        except Exception as e:
+            print(f"[BOOT] set_webhook failed: {e}", flush=True, file=sys.stderr)
+        application_initialized = True
         background_task = asyncio.create_task(t1_background_loop(application.bot, repo, settings))
         print("[BOOT] Background task started", flush=True, file=sys.stderr)
     else:
