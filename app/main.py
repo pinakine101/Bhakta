@@ -500,15 +500,6 @@ async def onboarding_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await repo.ensure_analysis_profile(user_id)
         today_s = datetime.now(ZoneInfo(settings.timezone)).date().isoformat()
         await repo.mark_first_exercise_sent(user_id, today_s)
-        try:
-            tz_name = resolve_tz_name(settings.timezone, settings.timezone)
-            today = datetime.now(ZoneInfo(tz_name)).date()
-            await send_daily_tasks(
-                application.bot, repo, settings, user_id,
-                tz_name, ag, today, include_already_sent=True,
-            )
-        except Exception:
-            pass
         await update.effective_message.reply_text(
             "Профиль сохранен.\n\n"
             + HOW_IT_WORKS_TEXT,
