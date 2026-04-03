@@ -235,7 +235,6 @@ def register_t2_handlers(app: Application, _repo: Repository, _settings: Setting
     app.add_handler(CallbackQueryHandler(_t2_callback_ld, pattern=re.compile(r"^t2:ld:(\d+)$")))
     app.add_handler(CallbackQueryHandler(_t2_callback_fd, pattern=re.compile(r"^t2:fd:(\d+)$")))
     app.add_handler(CallbackQueryHandler(_t2_callback_c, pattern=re.compile(r"^t2:c:(\d+):(\d+)$")))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _t2_text_flow))
 
 
 async def _t2_base(update: Update, row_id: int) -> tuple[int, dict | None]:

@@ -41,7 +41,9 @@ from app.services.word_analysis import build_default_word_dict_rows
 from app.services.zodiac import get_age_group, get_zodiac_and_element
 from app.t1_bot import T1State, register_t1_handlers, t1_background_loop
 from app.t1_bot import _send_daily_tasks_digest as send_daily_tasks
-from app.t2_bot import T2State, register_t2_handlers
+from app.t1_bot import _t1_morning_word_message, _t1_evening_word_message, t1_state as _t1_state
+from app.t2_bot import T2State, register_t2_handlers, t2_state as _t2_state
+from app.t2_bot import _t2_text_flow
 
 
 def _is_valid_birth_date(raw_value: str) -> bool:
@@ -668,7 +670,18 @@ def main() -> None:
     register_t1_handlers(application, repo, settings, t1_state)
     register_t2_handlers(application, repo, settings, t2_state)
 
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, onboarding_handler))
+    async def unified_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        uid = update.effective_user.id
+        if uid in onboarding_state:
+            await onboarding_handler(update, context)
+        elif uid in _t1_state.pending_evening_word:
+            await _t1_evening_word_message(update, context)
+        elif uid in _t1_state.pending_morning_word:
+            await _t1_morning_word_message(update, context)
+        elif uid in _t2_state.pending:
+            await _t2_text_flow(update, context)
+
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, unified_text_handler))
 
     webhook_url = os.environ.get("RENDER_EXTERNAL_URL") or os.environ.get("WEBHOOK_URL")
     print(f"[BOOT] webhook_url='{webhook_url}' RENDER_EXTERNAL_URL='{os.environ.get('RENDER_EXTERNAL_URL')}' WEBHOOK_URL='{os.environ.get('WEBHOOK_URL')}'", flush=True, file=sys.stderr)

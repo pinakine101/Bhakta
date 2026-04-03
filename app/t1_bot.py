@@ -121,7 +121,6 @@ def register_t1_handlers(app: Application, _repo: Repository, _settings: Setting
     app.add_handler(CallbackQueryHandler(_t1_callback_eo, pattern=re.compile(r"^t1:eo:(\d+)$")))
     app.add_handler(CallbackQueryHandler(_t1_callback_es, pattern=re.compile(r"^t1:es:(\d+)$")))
     app.add_handler(CallbackQueryHandler(_t1_callback_ed, pattern=re.compile(r"^t1:ed:(\d+)$")))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _t1_message_router))
 
 
 async def _t1_callback_base(update: Update, row_id: int) -> dict | None:
