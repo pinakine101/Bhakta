@@ -67,8 +67,7 @@ def continue_keyboard() -> InlineKeyboardMarkup:
 
 _T1_IMAGE_PATH = Path(__file__).resolve().parent.parent / "images" / "Cont_1.jpg"
 _SOUND_DIR = Path(__file__).resolve().parent.parent / "sounds"
-_START_SOUND_PATH = _SOUND_DIR / "start.wav"
-_END_SOUND_PATH = _SOUND_DIR / "end.wav"
+_START_END_SOUND_PATH = _SOUND_DIR / "start.wav"
 _DONE_SOUND_PATH = _SOUND_DIR / "done.wav"
 
 
@@ -216,7 +215,7 @@ async def _t1_callback_ms(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     t1_state.morning_start[uid] = (row_id, datetime.now(timezone.utc), target)
     mm, ss = divmod(target, 60)
     await query.message.reply_text(f"<i>⏱ Таймер: {mm:02d}:{ss:02d}</i>", parse_mode="HTML")
-    await _send_voice_if_exists(context.bot, query.message.chat.id, _START_SOUND_PATH)
+    await _send_voice_if_exists(context.bot, query.message.chat.id, _START_END_SOUND_PATH)
     asyncio.create_task(_t1_morning_timer_countdown(context.bot, uid, query.message.chat.id, target))
     await query.answer("Время пошло")
 
@@ -224,7 +223,7 @@ async def _t1_callback_ms(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def _t1_morning_timer_countdown(bot: Bot, uid: int, chat_id: int, target: int) -> None:
     await asyncio.sleep(target)
     if uid in t1_state.morning_start:
-        await _send_voice_if_exists(bot, chat_id, _END_SOUND_PATH)
+        await _send_voice_if_exists(bot, chat_id, _START_END_SOUND_PATH)
 
 
 async def _t1_callback_md(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -306,7 +305,7 @@ async def _t1_callback_es(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
     uid = update.effective_user.id
     t1_state.evening_phase[uid] = row_id
-    await _send_voice_if_exists(context.bot, query.message.chat.id, _START_SOUND_PATH)
+    await _send_voice_if_exists(context.bot, query.message.chat.id, _START_END_SOUND_PATH)
     await query.answer()
 
 
