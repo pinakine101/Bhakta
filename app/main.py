@@ -150,11 +150,6 @@ async def send_today_tasks_list(update: Update, context: ContextTypes.DEFAULT_TY
         skipped = bool(r.get("skipped"))
         if done or skipped:
             continue
-        ws = str(r.get("window_start") or "")
-        we = str(r.get("window_end") or "")
-        now_utc = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
-        if now_utc < ws or now_utc > we:
-            continue
         title = _task_title(str(r["task_type"]), r.get("t2_subtype"))
         cb = _task_open_callback(str(r["task_type"]), int(r["id"]))
         if cb:
