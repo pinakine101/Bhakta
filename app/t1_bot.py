@@ -495,7 +495,6 @@ async def _send_daily_tasks_digest(
         await repo.upsert_scheduled_task(uid, "T4", today_s, "", t4_id, t4_ws, t4_we, None)
 
     rows = await repo.list_scheduled_for_date(uid, today_s)
-    print(f"[DIGEST] uid={uid} rows={len(rows)}", flush=True)
     buttons: list[list[InlineKeyboardButton]] = []
     mark_rows: list[int] = []
 
@@ -609,13 +608,7 @@ async def _maybe_send_monthly_stage_notice(
 async def t1_scheduler_tick(bot: Bot, repo: Repository, settings: Settings) -> None:
     now_iso = _now_utc_iso()
     users = await repo.list_users_active_course()
-    print(f"[SCHEDULER] Found {len(users)} active users", flush=True)
     for uid, tz_raw, ag, course_start_s in users:
-        tz = resolve_tz_name(tz_raw, settings.timezone)
-        now_local = datetime.now(ZoneInfo(tz))
-        today = now_local.date()
-        today_s = today.isoformat()
-        print(f"[SCHEDULER] Processing uid={uid} tz={tz} age_group={ag}", flush=True)
         if not course_start_s:
             await repo.ensure_course_start_date_today(uid, today_s)
             course_start_s = today_s

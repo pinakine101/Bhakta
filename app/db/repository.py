@@ -446,10 +446,10 @@ class Repository:
                        COALESCE(timezone, 'Europe/Moscow'),
                        COALESCE(age_group, '25-35'),
                        course_start_date
-                FROM users
-                WHERE first_exercise_sent = 1
-                  AND full_name IS NOT NULL AND birth_date IS NOT NULL AND location IS NOT NULL
-                  AND age_group IS NOT NULL
+                 FROM users
+                 WHERE first_exercise_sent = 1
+                   AND full_name IS NOT NULL AND birth_date IS NOT NULL
+                   AND age_group IS NOT NULL
                 """
             )
             return [(int(r[0]), r[1], r[2], r[3]) for r in await cursor.fetchall()]

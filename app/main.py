@@ -137,11 +137,9 @@ def _task_open_callback(task_type: str, row_id: int) -> str | None:
 async def send_today_tasks_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
     urow = await repo.get_user_row_for_t1(uid)
-    print(f"[TASKS] uid={uid} urow={urow}", flush=True)
     tz = resolve_tz_name((urow or {}).get("timezone"), settings.timezone)
     today_s = datetime.now(ZoneInfo(tz)).date().isoformat()
     rows = await repo.list_scheduled_for_date(uid, today_s)
-    print(f"[TASKS] uid={uid} rows={len(rows)} today={today_s}", flush=True)
     kb_rows: list[list[InlineKeyboardButton]] = []
     for r in rows:
         done = bool(r.get("completed"))
@@ -486,6 +484,8 @@ async def onboarding_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         onboarding_state.pop(user_id, None)
         await repo.ensure_analysis_profile(user_id)
+        today_s = datetime.now(ZoneInfo(settings.timezone)).date().isoformat()
+        await repo.mark_first_exercise_sent(user_id, today_s)
         await update.effective_message.reply_text(
             "Профиль сохранен.\n\n"
             + HOW_IT_WORKS_TEXT,
@@ -504,6 +504,8 @@ async def onboarding_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         onboarding_state.pop(user_id, None)
         await repo.ensure_analysis_profile(user_id)
+        today_s = datetime.now(ZoneInfo(settings.timezone)).date().isoformat()
+        await repo.mark_first_exercise_sent(user_id, today_s)
         await update.effective_message.reply_text(
             "Профиль сохранен.\n\n"
             + HOW_IT_WORKS_TEXT,
@@ -525,13 +527,11 @@ async def handle_webhook(request: web.Request) -> web.Response:
     if application and application_initialized:
         try:
             update = Update.de_json(data, application.bot)
-            print(f"[WEBHOOK] update_id={update.update_id}, has_msg={bool(update.message)}, has_cb={bool(update.callback_query)}", flush=True, file=sys.stderr)
             await application.process_update(update)
-            print(f"[WEBHOOK] processed", flush=True, file=sys.stderr)
         except Exception as e:
             print(f"[WEBHOOK] error: {e}", flush=True, file=sys.stderr)
     else:
-        print(f"[WEBHOOK] application not ready (app={'None' if not application else 'exists'}, init={application_initialized})", flush=True, file=sys.stderr)
+        print(f"[WEBHOOK] not ready", flush=True, file=sys.stderr)
     return web.Response(text="OK")
 
 
