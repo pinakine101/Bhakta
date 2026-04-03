@@ -139,36 +139,24 @@ async def send_today_tasks_list(update: Update, context: ContextTypes.DEFAULT_TY
     tz = resolve_tz_name((urow or {}).get("timezone"), settings.timezone)
     today_s = datetime.now(ZoneInfo(tz)).date().isoformat()
     rows = await repo.list_scheduled_for_date(uid, today_s)
-    if not rows:
-        await update.effective_message.reply_text(
-            "На сегодня заданий нет.",
-            reply_markup=ReplyKeyboardRemove()
-        )
-        return
-
-    lines: list[str] = ["Список заданий на сегодня:"]
     kb_rows: list[list[InlineKeyboardButton]] = []
-    seen_button_titles: set[str] = set()
     for r in rows:
-        title = _task_title(str(r["task_type"]), r.get("t2_subtype"))
         done = bool(r.get("completed"))
         skipped = bool(r.get("skipped"))
-        if done:
-            lines.append(f"• <s>{title}</s>")
-        elif skipped:
-            lines.append(f"• <s>{title}</s> (пропущено)")
-        else:
-            lines.append(f"• {title}")
-            cb = _task_open_callback(str(r["task_type"]), int(r["id"]))
-            if cb and title not in seen_button_titles:
-                kb_rows.append([InlineKeyboardButton(text=title, callback_data=cb)])
-                seen_button_titles.add(title)
+        if done or skipped:
+            continue
+        title = _task_title(str(r["task_type"]), r.get("t2_subtype"))
+        cb = _task_open_callback(str(r["task_type"]), int(r["id"]))
+        if cb:
+            kb_rows.append([InlineKeyboardButton(text=title, callback_data=cb)])
 
-    await update.effective_message.reply_text(
-        "\n".join(lines),
-        parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup(kb_rows) if kb_rows else ReplyKeyboardRemove(),
-    )
+    if not kb_rows:
+        await update.effective_message.reply_text("На сегодня заданий нет.")
+    else:
+        await update.effective_message.reply_text(
+            "Активные задания:",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows),
+        )
 
 
 class OnboardingStep(str, Enum):
