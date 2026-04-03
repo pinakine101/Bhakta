@@ -459,7 +459,7 @@ async def _t2_text_flow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
     raw = (message.text or "").strip()
     if raw.startswith("/"):
-        await message.answer("Заверши шаг или используй /stop.")
+        await message.reply_text("Заверши шаг или используй /stop.")
         return
     row = await repo.get_scheduled_task_by_id(pend.row_id)
     if not row or row["user_id"] != uid or row["completed"]:
@@ -472,16 +472,16 @@ async def _t2_text_flow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     if pend.step == "art_sents":
         if len(raw) < 15:
-            await message.answer("Напиши чуть развёрнутее (хотя бы пара предложений).")
+            await message.reply_text("Напиши чуть развёрнутее (хотя бы пара предложений).")
             return
         pend.response_draft = raw
         pend.step = "art_word"
-        await message.answer("Напиши одно слово — итог.")
+        await message.reply_text("Напиши одно слово — итог.")
         return
 
     if pend.step == "art_word":
         if not pend.response_draft or len(raw) > 50 or " " in raw.strip():
-            await message.answer("Одно слово, до 50 символов.")
+            await message.reply_text("Одно слово, до 50 символов.")
             return
         actual = pend.art_seconds or 0
         await repo.complete_t2_task(
@@ -490,33 +490,33 @@ async def _t2_text_flow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         )
         await repo.save_user_word(uid, raw, "T2", lib_task_id, ag)
         t2_state.pending.pop(uid, None)
-        await message.answer("Ваши данные внесены", reply_markup=continue_keyboard())
+        await message.reply_text("Ваши данные внесены", reply_markup=continue_keyboard())
         return
 
     if pend.step == "life_text":
         if len(raw) < 20:
-            await message.answer("Напиши несколько предложений (3–5).")
+            await message.reply_text("Напиши несколько предложений (3–5).")
             return
         pend.response_draft = raw
         pend.step = "life_word"
-        await message.answer("Напиши одно слово — чувство или итог.")
+        await message.reply_text("Напиши одно слово — чувство или итог.")
         return
 
     if pend.step == "life_word":
         if not pend.response_draft or len(raw) > 50 or " " in raw.strip():
-            await message.answer("Одно слово, до 50 символов.")
+            await message.reply_text("Одно слово, до 50 символов.")
             return
         await repo.complete_t2_task(
             pend.row_id, word=raw, response=pend.response_draft, completed_at=now_s,
         )
         await repo.save_user_word(uid, raw, "T2", lib_task_id, ag)
         t2_state.pending.pop(uid, None)
-        await message.answer("Ваши данные внесены", reply_markup=continue_keyboard())
+        await message.reply_text("Ваши данные внесены", reply_markup=continue_keyboard())
         return
 
     if pend.step == "choice_word":
         if len(raw) > 80:
-            await message.answer("Короче, одно слово или короткая фраза.")
+            await message.reply_text("Короче, одно слово или короткая фраза.")
             return
         await repo.complete_t2_task(
             pend.row_id, word=raw, response=None,
@@ -524,17 +524,17 @@ async def _t2_text_flow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         )
         await repo.save_user_word(uid, raw, "T2", lib_task_id, ag)
         t2_state.pending.pop(uid, None)
-        await message.answer("Ваши данные внесены", reply_markup=continue_keyboard())
+        await message.reply_text("Ваши данные внесены", reply_markup=continue_keyboard())
         return
 
     if pend.step == "final_word":
         if len(raw) > 50 or " " in raw.strip():
-            await message.answer("Одно слово.")
+            await message.reply_text("Одно слово.")
             return
         await repo.complete_t2_task(pend.row_id, word=raw, response=None, completed_at=now_s)
         await repo.save_user_word(uid, raw, "T2", lib_task_id, ag)
         t2_state.pending.pop(uid, None)
-        await message.answer("Ваши данные внесены", reply_markup=continue_keyboard())
+        await message.reply_text("Ваши данные внесены", reply_markup=continue_keyboard())
         return
 
 
