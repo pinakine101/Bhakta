@@ -141,14 +141,14 @@ def _task_open_callback(task_type: str, row_id: int) -> str | None:
 
 async def task_info_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
+    await query.answer()
     match = re.match(r"^task:info:(\d+)$", query.data or "")
     if not match:
-        await query.answer()
         return
     row_id = int(match.group(1))
     row = await repo.get_scheduled_task_by_id(row_id)
     if not row:
-        await query.answer("Задание не найдено.", show_alert=True)
+        await query.message.reply_text("Задание не найдено.")
         return
     task_type = str(row["task_type"])
     ws = str(row.get("window_start") or "")
@@ -169,7 +169,14 @@ async def task_info_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     done = row.get("completed")
     status = "✅ Выполнено" if done else "📋 Доступно"
     alert_text = f"{title}\n{status}\n{time_info}"
-    await query.answer(alert_text, show_alert=True)
+    cb = _task_open_callback(task_type, row_id)
+    if cb and not done:
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text=f"▶ Открыть", callback_data=cb)]]
+        )
+        await query.edit_message_text(f"{title}\n{time_info}", reply_markup=kb)
+    else:
+        await query.answer(alert_text, show_alert=True)
 
 
 async def send_today_tasks_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -778,8 +785,8 @@ def main() -> None:
 
     application.add_handler(CallbackQueryHandler(tasks_today, pattern=f"^{TASKS_TODAY}$"))
     application.add_handler(CallbackQueryHandler(task_info_callback, pattern=re.compile(r"^task:info:(\d+)$")))
-    application.add_handler(CallbackQueryHandler(t3_callbacks, pattern="^t3:"))
-    application.add_handler(CallbackQueryHandler(t4_callbacks, pattern="^t4:"))
+    application.add_handler(CallbackQueryHandler(t3_callbacks, pattern=re.compile(r"^t3:")))
+    application.add_handler(CallbackQueryHandler(t4_callbacks, pattern=re.compile(r"^t4:")))
 
     register_t1_handlers(application, repo, settings, t1_state)
     register_t2_handlers(application, repo, settings, t2_state)
