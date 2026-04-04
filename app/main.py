@@ -40,7 +40,7 @@ from app.services.schedule_loader import (
 from app.services.word_analysis import build_default_word_dict_rows
 from app.services.zodiac import get_age_group, get_zodiac_and_element
 from app.t1_bot import T1State, register_t1_handlers, t1_background_loop
-from app.t1_bot import _send_daily_tasks_digest as send_daily_tasks
+from app.t1_bot import _create_daily_tasks
 from app.t1_bot import _t1_morning_word_message, _t1_evening_word_message, t1_state as _t1_state
 from app.t2_bot import T2State, register_t2_handlers, t2_state as _t2_state
 from app.t2_bot import _t2_text_flow
@@ -147,9 +147,9 @@ async def send_today_tasks_list(update: Update, context: ContextTypes.DEFAULT_TY
     today = datetime.now(ZoneInfo(tz)).date()
     today_s = today.isoformat()
     try:
-        await send_daily_tasks(
+        await _create_daily_tasks(
             application.bot, repo, settings, uid,
-            tz, urow["age_group"], today, include_already_sent=True,
+            tz, urow["age_group"], today,
         )
     except Exception:
         pass
@@ -538,12 +538,17 @@ async def handle_webhook(request: web.Request) -> web.Response:
     except Exception:
         return web.Response(status=400, text="Bad Request")
     print(f"[WEBHOOK] POST data: {str(data)[:200]}", flush=True, file=sys.stderr)
+    print(f"[WEBHOOK] application={application is not None}, initialized={application_initialized}", flush=True, file=sys.stderr)
     if application and application_initialized:
         try:
             update = Update.de_json(data, application.bot)
+            if update and update.message:
+                print(f"[WEBHOOK] Processing message from {update.effective_user.id}: {update.message.text}", flush=True, file=sys.stderr)
             await application.process_update(update)
         except Exception as e:
             print(f"[WEBHOOK] error: {e}", flush=True, file=sys.stderr)
+            import traceback
+            traceback.print_exc()
     else:
         print(f"[WEBHOOK] not ready", flush=True, file=sys.stderr)
     return web.Response(text="OK")

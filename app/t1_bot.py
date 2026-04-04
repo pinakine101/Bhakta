@@ -66,16 +66,6 @@ def continue_keyboard() -> InlineKeyboardMarkup:
 
 
 _T1_IMAGE_PATH = Path(__file__).resolve().parent.parent / "images" / "Cont_1.jpg"
-_SOUND_DIR = Path(__file__).resolve().parent.parent / "sounds"
-_START_END_SOUND_PATH = _SOUND_DIR / "start.wav"
-_DONE_SOUND_PATH = _SOUND_DIR / "done.wav"
-
-
-async def _send_voice_if_exists(bot: Bot, chat_id: int, path: Path) -> None:
-    if path.is_file():
-        with contextlib.suppress(Exception):
-            with open(str(path), "rb") as f:
-                await bot.send_voice(chat_id, voice=f)
 
 
 async def _send_t1_image_if_exists(bot: Bot, chat_id: int) -> None:
@@ -215,7 +205,6 @@ async def _t1_callback_ms(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     t1_state.morning_start[uid] = (row_id, datetime.now(timezone.utc), target)
     mm, ss = divmod(target, 60)
     await query.message.reply_text(f"<i>⏱ Таймер: {mm:02d}:{ss:02d}</i>", parse_mode="HTML")
-    await _send_voice_if_exists(context.bot, query.message.chat.id, _START_END_SOUND_PATH)
     asyncio.create_task(_t1_morning_timer_countdown(context.bot, uid, query.message.chat.id, target))
     await query.answer("Время пошло")
 
@@ -223,7 +212,10 @@ async def _t1_callback_ms(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def _t1_morning_timer_countdown(bot: Bot, uid: int, chat_id: int, target: int) -> None:
     await asyncio.sleep(target)
     if uid in t1_state.morning_start:
-        await _send_voice_if_exists(bot, chat_id, _START_END_SOUND_PATH)
+        try:
+            await bot.send_message(chat_id, "⏱ Время вышло!")
+        except Exception:
+            pass
 
 
 async def _t1_callback_md(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -258,7 +250,6 @@ async def _t1_callback_md(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         "task_date": row["task_date"],
         "reached": reached,
     }
-    await _send_voice_if_exists(context.bot, query.message.chat.id, _DONE_SOUND_PATH)
     await query.message.reply_text("Напишите одно слово.", reply_markup=ReplyKeyboardRemove())
     await query.answer()
 
@@ -305,7 +296,6 @@ async def _t1_callback_es(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
     uid = update.effective_user.id
     t1_state.evening_phase[uid] = row_id
-    await _send_voice_if_exists(context.bot, query.message.chat.id, _START_END_SOUND_PATH)
     await query.answer()
 
 
@@ -328,7 +318,6 @@ async def _t1_callback_ed(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await _cancel_timer_safe(t1_state.evening_timers.pop(uid, None))
     t1_state.evening_phase.pop(uid, None)
     t1_state.pending_evening_word[uid] = row_id
-    await _send_voice_if_exists(context.bot, query.message.chat.id, _DONE_SOUND_PATH)
     await query.message.reply_text("Напишите одно слово.", reply_markup=ReplyKeyboardRemove())
     await query.answer()
 
@@ -458,7 +447,7 @@ async def deliver_t1_evening_slot(
         pass
 
 
-async def _send_daily_tasks_digest(
+async def _create_daily_tasks(
     bot: Bot,
     repo: Repository,
     settings: Settings,
@@ -466,9 +455,8 @@ async def _send_daily_tasks_digest(
     tz: str,
     age_group: str,
     today: date,
-    include_already_sent: bool = False,
 ) -> None:
-    now_iso = _now_utc_iso()
+    """Only create tasks in DB, do NOT send any messages."""
     tz_name = resolve_tz_name(tz, settings.timezone)
     today_s = today.isoformat()
 
@@ -513,6 +501,23 @@ async def _send_daily_tasks_digest(
         t4_end_local = t4_start_local + timedelta(hours=1)
         t4_ws, t4_we = local_window_to_utc_iso(today, t4_start_local.time(), t4_end_local.time(), tz_name)
         await repo.upsert_scheduled_task(uid, "T4", today_s, "", t4_id, t4_ws, t4_we, None)
+
+
+async def _send_daily_tasks_digest(
+    bot: Bot,
+    repo: Repository,
+    settings: Settings,
+    uid: int,
+    tz: str,
+    age_group: str,
+    today: date,
+    include_already_sent: bool = False,
+) -> None:
+    now_iso = _now_utc_iso()
+    tz_name = resolve_tz_name(tz, settings.timezone)
+    today_s = today.isoformat()
+
+    await _create_daily_tasks(bot, repo, settings, uid, tz, age_group, today)
 
     rows = await repo.list_scheduled_for_date(uid, today_s)
     buttons: list[list[InlineKeyboardButton]] = []
