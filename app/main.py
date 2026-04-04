@@ -140,19 +140,20 @@ def _task_open_callback(task_type: str, row_id: int) -> str | None:
 
 async def task_info_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
-    await query.answer()
     match = re.match(r"^task:info:(\d+)$", query.data or "")
     if not match:
+        await query.answer()
         return
     row_id = int(match.group(1))
     row = await repo.get_scheduled_task_by_id(row_id)
     if not row:
-        await query.message.reply_text("Задание не найдено.")
+        await query.answer("Задание не найдено.", show_alert=True)
         return
     task_type = str(row["task_type"])
     ws = str(row.get("window_start") or "")
     we = str(row.get("window_end") or "")
-    tz = resolve_tz_name(row.get("timezone"), settings.timezone)
+    urow = await repo.get_user_row_for_t1(query.from_user.id)
+    tz = resolve_tz_name(urow.get("timezone") if urow else None, settings.timezone)
     try:
         ws_local = datetime.fromisoformat(ws.replace("Z", "+00:00")).astimezone(ZoneInfo(tz))
         we_local = datetime.fromisoformat(we.replace("Z", "+00:00")).astimezone(ZoneInfo(tz))
@@ -160,16 +161,20 @@ async def task_info_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         hours = int(duration.total_seconds() // 3600)
         minutes = int((duration.total_seconds() % 3600) // 60)
         dur_str = f"{hours}ч {minutes}м" if hours > 0 else f"{minutes}м"
-        time_info = f"Доступно с {ws_local.strftime('%H:%M')} до {we_local.strftime('%H:%M')} ({dur_str})"
+        time_info = f"⏰ {ws_local.strftime('%H:%M')}–{we_local.strftime('%H:%M')} ({dur_str})"
     except Exception:
-        time_info = "Время доступа: спонтанно"
+        time_info = "⏰ спонтанно"
     title = _task_title(task_type, row.get("t2_subtype"))
-    status = "✅ Выполнено" if row.get("completed") else "⏳ Ожидает" if row.get("skipped") else "📋 Доступно"
-    text = f"{title}\n{status}\n{time_info}"
-    kb = InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="Открыть задание", callback_data=_task_open_callback(task_type, row_id))]]
-    )
-    await query.message.reply_text(text, reply_markup=kb)
+    cb = _task_open_callback(task_type, row_id)
+    done = row.get("completed")
+    status = "✅ Выполнено" if done else "📋 Доступно"
+    alert_text = f"{title}\n{status}\n{time_info}"
+    await query.answer(alert_text, show_alert=True)
+    if cb and not done:
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text=f"▶ Открыть", callback_data=cb)]]
+        )
+        await query.edit_message_reply_markup(reply_markup=kb)
 
 
 async def send_today_tasks_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -194,6 +199,8 @@ async def send_today_tasks_list(update: Update, context: ContextTypes.DEFAULT_TY
         done = bool(r.get("completed"))
         skipped = bool(r.get("skipped"))
         if done or skipped:
+            continue
+        if str(r["task_type"]) == "T4":
             continue
         title = _task_title(str(r["task_type"]), r.get("t2_subtype"))
         cb = f"task:info:{int(r['id'])}"

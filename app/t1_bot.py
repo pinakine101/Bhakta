@@ -522,6 +522,7 @@ async def _send_daily_tasks_digest(
     rows = await repo.list_scheduled_for_date(uid, today_s)
     buttons: list[list[InlineKeyboardButton]] = []
     mark_rows: list[int] = []
+    t4_row = None
 
     for r in rows:
         t = str(r["task_type"])
@@ -545,13 +546,24 @@ async def _send_daily_tasks_digest(
             buttons.append([InlineKeyboardButton(text="Т3", callback_data=f"t3:o:{rid}")])
             mark_rows.append(rid)
         elif t == "T4":
-            buttons.append([InlineKeyboardButton(text="Т4", callback_data=f"t4:o:{rid}")])
-            mark_rows.append(rid)
+            if not r.get("sent_at"):
+                t4_row = r
 
     if buttons:
         await bot.send_message(uid, "Активные задания:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
         for row_id in mark_rows:
             await repo.mark_scheduled_sent(row_id, now_iso)
+
+    if t4_row:
+        rid = int(t4_row["id"])
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="Т4", callback_data=f"t4:o:{rid}")]]
+        )
+        try:
+            await bot.send_message(uid, "Новое задание Т4 — нажми кнопку, чтобы открыть.", reply_markup=kb)
+            await repo.mark_scheduled_sent(rid, now_iso)
+        except Exception:
+            pass
 
 
 def _format_window_local(win_start: str, win_end: str, tz_name: str) -> str:
