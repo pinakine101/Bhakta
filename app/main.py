@@ -405,6 +405,30 @@ async def recalc_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     await update.effective_message.reply_text(f"Пересчет выполнен. Обновлено строк: {updated}")
 
 
+async def progress_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    uid = update.effective_user.id
+    urow = await repo.get_user_row_for_t1(uid)
+    if not urow or not urow.get("age_group"):
+        await update.effective_message.reply_text("Сначала заполни профиль — /start")
+        return
+    tz = resolve_tz_name(urow.get("timezone"), settings.timezone)
+    today = datetime.now(ZoneInfo(tz)).date()
+    cs = urow.get("course_start_date")
+    if not cs:
+        await update.effective_message.reply_text("Курс ещё не начат.")
+        return
+    course_start = date.fromisoformat(cs)
+    days_elapsed = (today - course_start).days + 1
+    earned, max_pts = await repo.weekly_points_and_max(uid, course_start)
+    pct = int(round((earned / max_pts) * 100)) if max_pts > 0 else 0
+    text = (
+        f"📊 Прогресс за неделю:\n"
+        f"Баллы: {earned} из {max_pts} ({pct}%)\n"
+        f"Дней с начала курса: {days_elapsed}"
+    )
+    await update.effective_message.reply_text(text)
+
+
 async def tasks_today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
@@ -736,6 +760,7 @@ def main() -> None:
     application.add_handler(CommandHandler("stats", stats_cmd))
     application.add_handler(CommandHandler("review", review_cmd))
     application.add_handler(CommandHandler("recalc", recalc_cmd))
+    application.add_handler(CommandHandler("progress", progress_cmd))
 
     application.add_handler(CallbackQueryHandler(tasks_today, pattern=f"^{TASKS_TODAY}$"))
     application.add_handler(CallbackQueryHandler(task_info_callback, pattern=re.compile(r"^task:info:(\d+)$")))

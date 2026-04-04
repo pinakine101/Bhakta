@@ -642,6 +642,34 @@ async def _maybe_send_monthly_stage_notice(
     await repo.set_last_month_key(uid, month_key)
 
 
+async def _maybe_send_7day_progress(
+    bot: Bot,
+    repo: Repository,
+    uid: int,
+    now_local: datetime,
+    course_start: date,
+) -> None:
+    profile = await repo.get_analysis_profile(uid)
+    if not profile.get("reports_enabled", True):
+        return
+    today = now_local.date()
+    days_elapsed = (today - course_start).days + 1
+    if days_elapsed != 7 or now_local.time() < time(21, 0):
+        return
+    week_key = f"7day_{course_start.isoformat()}"
+    if str(profile.get("last_week_key") or "") == week_key:
+        return
+    earned, max_pts = await repo.weekly_points_and_max(uid, course_start)
+    pct = int(round((earned / max_pts) * 100)) if max_pts > 0 else 0
+    text = (
+        f"📊 Первые 7 дней курса:\n"
+        f"Баллы: {earned} из {max_pts} ({pct}% от возможных).\n"
+        f"Команда /progress — всегда можно проверить прогресс."
+    )
+    await bot.send_message(uid, text)
+    await repo.set_last_week_key(uid, week_key)
+
+
 async def t1_scheduler_tick(bot: Bot, repo: Repository, settings: Settings) -> None:
     now_iso = _now_utc_iso()
     users = await repo.list_users_active_course()
@@ -664,6 +692,11 @@ async def t1_scheduler_tick(bot: Bot, repo: Repository, settings: Settings) -> N
         await _send_daily_tasks_digest(bot, repo, settings, uid, tz, ag, today)
         await _maybe_send_weekly_report(bot, repo, uid, now_local)
         await _maybe_send_monthly_stage_notice(bot, repo, uid, now_local)
+        try:
+            cs_date = date.fromisoformat(course_start_s)
+            await _maybe_send_7day_progress(bot, repo, uid, now_local, cs_date)
+        except ValueError:
+            pass
 
 
 async def t1_background_loop(bot: Bot, repo: Repository, settings: Settings) -> None:
