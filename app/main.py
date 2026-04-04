@@ -218,9 +218,42 @@ class OnboardingState:
     step: OnboardingStep
     full_name: str | None = None
     birth_date: str | None = None
+    detected_timezone: str = "Europe/Moscow"
 
 
 onboarding_state: dict[int, OnboardingState] = {}
+
+_LANGUAGE_TZ_MAP = {
+    "ru": "Europe/Moscow",
+    "uk": "Europe/Kyiv",
+    "be": "Europe/Minsk",
+    "kk": "Asia/Almaty",
+    "uz": "Asia/Tashkent",
+    "ky": "Asia/Bishkek",
+    "tg": "Asia/Dushanbe",
+    "az": "Asia/Baku",
+    "hy": "Asia/Yerevan",
+    "ka": "Asia/Tbilisi",
+    "en": "Europe/London",
+    "de": "Europe/Berlin",
+    "fr": "Europe/Paris",
+    "es": "Europe/Madrid",
+    "it": "Europe/Rome",
+    "pt": "Europe/Lisbon",
+    "tr": "Europe/Istanbul",
+    "zh": "Asia/Shanghai",
+    "ja": "Asia/Tokyo",
+    "ko": "Asia/Seoul",
+    "ar": "Asia/Riyadh",
+    "hi": "Asia/Kolkata",
+}
+
+
+def _tz_from_language_code(lang_code: str | None, fallback: str) -> str:
+    if not lang_code:
+        return fallback
+    code = lang_code.split("-")[0].lower()
+    return _LANGUAGE_TZ_MAP.get(code, fallback)
 
 
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -235,8 +268,12 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
         return
 
-    onboarding_state[user_id] = OnboardingState(step=OnboardingStep.WAIT_NAME)
+    lang_code = update.effective_user.language_code
+    detected_tz = _tz_from_language_code(lang_code, settings.timezone)
+    onboarding_state[user_id] = OnboardingState(step=OnboardingStep.WAIT_NAME, detected_timezone=detected_tz)
+    tz_label = detected_tz.replace("_", " ").split("/")[-1]
     await update.effective_message.reply_text(
+        f"Определён часовой пояс: {detected_tz} ({tz_label}).\n\n"
         "Сначала заполним профиль.\nВведите ваше имя:",
         reply_markup=ReplyKeyboardRemove(),
     )
@@ -522,7 +559,7 @@ async def onboarding_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await repo.update_user_v2(user_id, age_group=ag, zodiac_sign=sign, element=elem)
         except ValueError:
             pass
-        timezone_name = settings.timezone
+        timezone_name = current.detected_timezone
         await repo.update_user_profile(
             telegram_id=user_id,
             full_name=current.full_name or "",
@@ -532,7 +569,7 @@ async def onboarding_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         onboarding_state.pop(user_id, None)
         await repo.ensure_analysis_profile(user_id)
-        today_s = datetime.now(ZoneInfo(settings.timezone)).date().isoformat()
+        today_s = datetime.now(ZoneInfo(timezone_name)).date().isoformat()
         await repo.mark_first_exercise_sent(user_id, today_s)
         await update.effective_message.reply_text(
             "Профиль сохранен.\n\n"
@@ -542,7 +579,7 @@ async def onboarding_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     if current.step.value == "wait_location":
-        timezone_name = settings.timezone
+        timezone_name = current.detected_timezone
         await repo.update_user_profile(
             telegram_id=user_id,
             full_name=current.full_name or "",
@@ -552,7 +589,7 @@ async def onboarding_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         onboarding_state.pop(user_id, None)
         await repo.ensure_analysis_profile(user_id)
-        today_s = datetime.now(ZoneInfo(settings.timezone)).date().isoformat()
+        today_s = datetime.now(ZoneInfo(timezone_name)).date().isoformat()
         await repo.mark_first_exercise_sent(user_id, today_s)
         await update.effective_message.reply_text(
             "Профиль сохранен.\n\n"
