@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import re
 import sys
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -137,6 +138,40 @@ def _task_open_callback(task_type: str, row_id: int) -> str | None:
     return None
 
 
+async def task_info_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    match = re.match(r"^task:info:(\d+)$", query.data or "")
+    if not match:
+        return
+    row_id = int(match.group(1))
+    row = await repo.get_scheduled_task_by_id(row_id)
+    if not row:
+        await query.message.reply_text("Задание не найдено.")
+        return
+    task_type = str(row["task_type"])
+    ws = str(row.get("window_start") or "")
+    we = str(row.get("window_end") or "")
+    tz = resolve_tz_name(row.get("timezone"), settings.timezone)
+    try:
+        ws_local = datetime.fromisoformat(ws.replace("Z", "+00:00")).astimezone(ZoneInfo(tz))
+        we_local = datetime.fromisoformat(we.replace("Z", "+00:00")).astimezone(ZoneInfo(tz))
+        duration = we_local - ws_local
+        hours = int(duration.total_seconds() // 3600)
+        minutes = int((duration.total_seconds() % 3600) // 60)
+        dur_str = f"{hours}ч {minutes}м" if hours > 0 else f"{minutes}м"
+        time_info = f"Доступно с {ws_local.strftime('%H:%M')} до {we_local.strftime('%H:%M')} ({dur_str})"
+    except Exception:
+        time_info = "Время доступа: спонтанно"
+    title = _task_title(task_type, row.get("t2_subtype"))
+    status = "✅ Выполнено" if row.get("completed") else "⏳ Ожидает" if row.get("skipped") else "📋 Доступно"
+    text = f"{title}\n{status}\n{time_info}"
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="Открыть задание", callback_data=_task_open_callback(task_type, row_id))]]
+    )
+    await query.message.reply_text(text, reply_markup=kb)
+
+
 async def send_today_tasks_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     uid = update.effective_user.id
     urow = await repo.get_user_row_for_t1(uid)
@@ -161,15 +196,14 @@ async def send_today_tasks_list(update: Update, context: ContextTypes.DEFAULT_TY
         if done or skipped:
             continue
         title = _task_title(str(r["task_type"]), r.get("t2_subtype"))
-        cb = _task_open_callback(str(r["task_type"]), int(r["id"]))
-        if cb:
-            kb_rows.append([InlineKeyboardButton(text=title, callback_data=cb)])
+        cb = f"task:info:{int(r['id'])}"
+        kb_rows.append([InlineKeyboardButton(text=title, callback_data=cb)])
 
     if not kb_rows:
         await update.effective_message.reply_text("На сегодня заданий нет.")
     else:
         await update.effective_message.reply_text(
-            "Активные задания:",
+            "Задания на сегодня:",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows),
         )
 
@@ -660,6 +694,7 @@ def main() -> None:
     application.add_handler(CommandHandler("recalc", recalc_cmd))
 
     application.add_handler(CallbackQueryHandler(tasks_today, pattern=f"^{TASKS_TODAY}$"))
+    application.add_handler(CallbackQueryHandler(task_info_callback, pattern=re.compile(r"^task:info:(\d+)$")))
     application.add_handler(CallbackQueryHandler(t3_callbacks, pattern="^t3:"))
     application.add_handler(CallbackQueryHandler(t4_callbacks, pattern="^t4:"))
 
