@@ -513,37 +513,39 @@ async def _t4_timer_countdown(bot: Bot, chat_id: int, target: int) -> None:
 
 async def t4_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
-    await query.answer()
     uid = query.from_user.id
     data = query.data
+    print(f"[T4] callback={data} uid={uid}", flush=True)
     parts = data.split(":")
     if len(parts) != 3:
-        await query.message.reply_text("Ошибка")
+        await query.answer("Ошибка формата", show_alert=True)
         return
     action, sid = parts[1], parts[2]
     try:
         row_id = int(sid)
     except ValueError:
-        await query.message.reply_text("Ошибка")
+        await query.answer("Ошибка ID", show_alert=True)
         return
     row = await repo.get_scheduled_task_by_id(row_id)
+    print(f"[T4] row={row}", flush=True)
     if not row or row["user_id"] != uid or row["task_type"] != "T4":
-        await query.message.reply_text("Задание не найдено")
+        await query.answer("Задание не найдено", show_alert=True)
         return
     ws = str(row.get("window_start") or "")
     we = str(row.get("window_end") or "")
     now_iso = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    print(f"[T4] ws={ws} we={we} now={now_iso} action={action}", flush=True)
     if now_iso < ws:
         await query.answer("Дождитесь временного окна", show_alert=True)
         return
     if now_iso > we:
-        await query.message.reply_text("Окно задания закончилось — задание удалено.")
+        await query.answer("Окно задания закончилось", show_alert=True)
         return
     if row["skipped"] and not row["completed"]:
-        await query.message.reply_text("Окно задания закончилось — задание удалено.")
+        await query.answer("Окно задания закончилось", show_alert=True)
         return
     if row["completed"]:
-        await query.message.reply_text("Уже обработано")
+        await query.answer("Уже обработано", show_alert=True)
         return
     tasks = get_tasks()
     t4_obj = next(
@@ -555,6 +557,7 @@ async def t4_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             InlineKeyboardButton(text="Принять", callback_data=f"t4:a:{row_id}")
         ]])
         await query.message.reply_text(get_t4_challenge_text(t4_obj.get("description", "")), reply_markup=kb)
+        await query.answer()
         return
     if action == "a":
         dm = int(t4_obj.get("duration_min") or 1)
@@ -568,14 +571,16 @@ async def t4_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         if old:
             old.cancel()
         _t4_timer_tasks[uid] = asyncio.create_task(_t4_timer_countdown(context.bot, query.message.chat.id, dm * 60))
+        await query.answer()
         return
     if action == "d":
         _t4_timer_tasks.pop(uid, None)
         now_s = datetime.now().isoformat(sep=" ", timespec="seconds")
         await repo.complete_scheduled_task(row_id, 4, None, now_s)
         await query.message.reply_text("Ваши данные внесены", reply_markup=continue_keyboard())
+        await query.answer()
         return
-    await query.message.reply_text("Неизвестное действие")
+    await query.answer("Неизвестное действие", show_alert=True)
 
 
 async def onboarding_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
