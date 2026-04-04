@@ -163,18 +163,12 @@ async def task_info_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         dur_str = f"{hours}ч {minutes}м" if hours > 0 else f"{minutes}м"
         time_info = f"⏰ {ws_local.strftime('%H:%M')}–{we_local.strftime('%H:%M')} ({dur_str})"
     except Exception:
-        time_info = "⏰ спонтанно"
+        time_info = "⏰ Спонтанно"
     title = _task_title(task_type, row.get("t2_subtype"))
-    cb = _task_open_callback(task_type, row_id)
     done = row.get("completed")
     status = "✅ Выполнено" if done else "📋 Доступно"
     alert_text = f"{title}\n{status}\n{time_info}"
     await query.answer(alert_text, show_alert=True)
-    if cb and not done:
-        kb = InlineKeyboardMarkup(
-            inline_keyboard=[[InlineKeyboardButton(text=f"▶ Открыть", callback_data=cb)]]
-        )
-        await query.edit_message_reply_markup(reply_markup=kb)
 
 
 async def send_today_tasks_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
