@@ -355,7 +355,19 @@ async def _t2_callback_s(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     dm = int((art or {}).get("duration_min") or 2)
     await _cancel_timer_safe(t2_state.art_timers.pop(uid, None))
     t2_state.art_session[uid] = (row_id, datetime.now(timezone.utc))
+    mm, ss = divmod(dm * 60, 60)
+    await query.message.reply_text(f"<i>⏱ Таймер: {mm:02d}:{ss:02d}</i>", parse_mode="HTML")
+    asyncio.create_task(_t2_art_timer_countdown(context.bot, uid, query.message.chat.id, dm * 60))
     await query.answer()
+
+
+async def _t2_art_timer_countdown(bot: Bot, uid: int, chat_id: int, target: int) -> None:
+    await asyncio.sleep(target)
+    if uid in t2_state.art_session:
+        try:
+            await bot.send_message(chat_id, "⏱ Время вышло! Нажми «Готово» и напиши свои впечатления.")
+        except Exception:
+            pass
 
 
 async def _t2_callback_d(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 from aiohttp import web
 from dotenv import load_dotenv
 from telegram import (
+    Bot,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     KeyboardButton,
@@ -492,6 +493,17 @@ async def t3_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await query.message.reply_text("Неизвестное действие")
 
 
+_t4_timer_tasks: dict[int, asyncio.Task] = {}
+
+
+async def _t4_timer_countdown(bot: Bot, chat_id: int, target: int) -> None:
+    await asyncio.sleep(target)
+    try:
+        await bot.send_message(chat_id, "⏱ Время вышло! Нажми «Готово» если выполнил задание.")
+    except Exception:
+        pass
+
+
 async def t4_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
@@ -538,12 +550,20 @@ async def t4_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await query.message.reply_text(get_t4_challenge_text(t4_obj.get("description", "")), reply_markup=kb)
         return
     if action == "a":
+        dm = int(t4_obj.get("duration_min") or 1)
         kb = InlineKeyboardMarkup([[
             InlineKeyboardButton(text="Готово", callback_data=f"t4:d:{row_id}")
         ]])
         await query.message.reply_text("Выполни задание и нажми «Готово».", reply_markup=kb)
+        mm, ss = divmod(dm * 60, 60)
+        await query.message.reply_text(f"<i>⏱ Таймер: {mm:02d}:{ss:02d}</i>", parse_mode="HTML")
+        old = _t4_timer_tasks.pop(uid, None)
+        if old:
+            old.cancel()
+        _t4_timer_tasks[uid] = asyncio.create_task(_t4_timer_countdown(context.bot, query.message.chat.id, dm * 60))
         return
     if action == "d":
+        _t4_timer_tasks.pop(uid, None)
         now_s = datetime.now().isoformat(sep=" ", timespec="seconds")
         await repo.complete_scheduled_task(row_id, 4, None, now_s)
         await query.message.reply_text("Ваши данные внесены", reply_markup=continue_keyboard())

@@ -30,6 +30,7 @@ from app.services.t1_runtime import (
     resolve_tz_name,
     schedule_day_index,
     t1_evening_params_for_day,
+    evening_breath_duration_sec,
 )
 from app.services.schedule_loader import (
     course_calendar_day,
@@ -296,7 +297,23 @@ async def _t1_callback_es(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
     uid = update.effective_user.id
     t1_state.evening_phase[uid] = row_id
+    rhythm = row.get("evening_rhythm") or ""
+    cycles = int(row.get("evening_cycles") or 0)
+    dur = evening_breath_duration_sec(rhythm, cycles)
+    mm, ss = divmod(dur, 60)
+    await query.message.reply_text(f"<i>⏱ Таймер: {mm:02d}:{ss:02d}</i>", parse_mode="HTML")
+    await _cancel_timer_safe(t1_state.evening_timers.pop(uid, None))
+    t1_state.evening_timers[uid] = asyncio.create_task(_t1_evening_timer_countdown(context.bot, uid, query.message.chat.id, dur))
     await query.answer()
+
+
+async def _t1_evening_timer_countdown(bot: Bot, uid: int, chat_id: int, target: int) -> None:
+    await asyncio.sleep(target)
+    if uid in t1_state.evening_phase:
+        try:
+            await bot.send_message(chat_id, "⏱ Время вышло! Нажми «Готово» и напиши одно слово.")
+        except Exception:
+            pass
 
 
 async def _t1_callback_ed(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
