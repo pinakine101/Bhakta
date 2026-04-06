@@ -216,7 +216,6 @@ def register_t2_handlers(app: Application, _repo: Repository, _settings: Setting
 async def _t2_base(update: Update, row_id: int) -> tuple[int, dict | None]:
     query = update.callback_query
     uid = update.effective_user.id
-    print(f"[T2] _t2_base called, data={query.data}, uid={uid}", flush=True)
     data = query.data or ""
     parts = data.split(":")
     if len(parts) < 3:
@@ -308,7 +307,6 @@ async def _t2_callback_sk(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 async def _t2_callback_s(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
-    print(f"[T2] _t2_callback_s called, data={query.data}", flush=True)
     match = re.match(r"^t2:s:(\d+)$", query.data or "")
     if not match:
         return

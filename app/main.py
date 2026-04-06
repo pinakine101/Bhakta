@@ -169,10 +169,12 @@ async def task_info_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         time_info = "⏰ Спонтанно"
     title = _task_title(task_type, row.get("t2_subtype"))
     done = row.get("completed")
-    status = "✅ Выполнено" if done else "📋 Доступно"
+    now_iso = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    is_active = not done and ws and we and ws <= now_iso <= we
+    status = "✅ Выполнено" if done else ("📋 Доступно" if is_active else "⏸ Неактивно")
     alert_text = f"{title}\n{status}\n{time_info}"
     cb = _task_open_callback(task_type, row_id)
-    if cb and not done:
+    if cb and is_active:
         kb = InlineKeyboardMarkup(
             inline_keyboard=[[InlineKeyboardButton(text=f"▶ Открыть", callback_data=cb)]]
         )
