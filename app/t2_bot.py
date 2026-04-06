@@ -55,7 +55,7 @@ def _window_status(window_start_iso: str, window_end_iso: str) -> str:
         return "not_started"
     if now > window_end_iso:
         return "ended"
-        return "open"
+    return "open"
 
 
 async def _cancel_timer_safe(t: asyncio.Task | None) -> None:

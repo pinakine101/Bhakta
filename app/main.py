@@ -173,17 +173,20 @@ async def task_info_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     is_active = not done and ws and we and ws <= now_iso <= we
     if done:
         status = "✅ Выполнено"
+        alert_text = f"{title}\n{status}\n{time_info}"
     elif is_active:
         status = "📋 Доступно"
+        alert_text = f"{title}\n{status}\n{time_info}"
+    elif ws and ws > now_iso:
+        try:
+            ws_local = datetime.fromisoformat(ws.replace("Z", "+00:00")).astimezone(ZoneInfo(tz))
+            alert_text = f"{title}\nОкно откроется в {ws_local.strftime('%H:%M')}\n{time_info}"
+        except Exception:
+            alert_text = f"{title}\n⏸ Неактивно\n{time_info}"
+    elif ws and now_iso > we:
+        alert_text = f"{title}\nОкно уже закончилось\n{time_info}"
     else:
-        status = "⏸ Неактивно"
-        if ws and ws > now_iso:
-            try:
-                ws_local = datetime.fromisoformat(ws.replace("Z", "+00:00")).astimezone(ZoneInfo(tz))
-                status += f"\nАктивация: {ws_local.strftime('%H:%M')}"
-            except Exception:
-                pass
-    alert_text = f"{title}\n{status}\n{time_info}"
+        alert_text = f"{title}\n⏸ Неактивно\n{time_info}"
     cb = _task_open_callback(task_type, row_id)
     if cb and is_active:
         kb = InlineKeyboardMarkup(
@@ -192,6 +195,15 @@ async def task_info_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await query.edit_message_text(f"{title}\n{time_info}", reply_markup=kb)
     else:
         await query.answer(alert_text, show_alert=True)
+
+
+def _format_window_short(win_start: str, win_end: str, tz: str) -> str:
+    try:
+        ws = datetime.fromisoformat(win_start.replace("Z", "+00:00")).astimezone(ZoneInfo(tz))
+        we = datetime.fromisoformat(win_end.replace("Z", "+00:00")).astimezone(ZoneInfo(tz))
+        return f"{ws.strftime('%H:%M')}-{we.strftime('%H:%M')}"
+    except Exception:
+        return ""
 
 
 async def send_today_tasks_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -212,6 +224,7 @@ async def send_today_tasks_list(update: Update, context: ContextTypes.DEFAULT_TY
         pass
     rows = await repo.list_scheduled_for_date(uid, today_s)
     kb_rows: list[list[InlineKeyboardButton]] = []
+    now_iso = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
     for r in rows:
         done = bool(r.get("completed"))
         skipped = bool(r.get("skipped"))
@@ -219,7 +232,16 @@ async def send_today_tasks_list(update: Update, context: ContextTypes.DEFAULT_TY
             continue
         if str(r["task_type"]) == "T4":
             continue
-        title = _task_title(str(r["task_type"]), r.get("t2_subtype"))
+        task_type = str(r["task_type"])
+        ws = str(r.get("window_start") or "")
+        we = str(r.get("window_end") or "")
+        is_active = ws and we and ws <= now_iso <= we
+        window_str = _format_window_short(ws, we, tz)
+        base_title = _task_title(task_type, r.get("t2_subtype"))
+        if window_str:
+            title = f"{base_title} {window_str}"
+        else:
+            title = base_title
         cb = f"task:info:{int(r['id'])}"
         kb_rows.append([InlineKeyboardButton(text=title, callback_data=cb)])
 
