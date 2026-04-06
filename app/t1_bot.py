@@ -39,6 +39,8 @@ from app.services.schedule_loader import (
     t2_assignment_for_calendar_day,
 )
 
+from app import t1_state
+
 
 @dataclass
 class T1State:
@@ -392,9 +394,6 @@ async def _t1_morning_word_message(update: Update, context: ContextTypes.DEFAULT
         user_id=uid, word=word, task_type="T1_morning", task_id=str(row_id), age_group=ag
     )
     await message.reply_text("Ваши данные внесены", reply_markup=continue_keyboard())
-
-
-t1_state = T1State()
 
 
 async def deliver_t1_morning_slot(
