@@ -171,7 +171,18 @@ async def task_info_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     done = row.get("completed")
     now_iso = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
     is_active = not done and ws and we and ws <= now_iso <= we
-    status = "✅ Выполнено" if done else ("📋 Доступно" if is_active else "⏸ Неактивно")
+    if done:
+        status = "✅ Выполнено"
+    elif is_active:
+        status = "📋 Доступно"
+    else:
+        status = "⏸ Неактивно"
+        if ws and ws > now_iso:
+            try:
+                ws_local = datetime.fromisoformat(ws.replace("Z", "+00:00")).astimezone(ZoneInfo(tz))
+                status += f"\nАктивация: {ws_local.strftime('%H:%M')}"
+            except Exception:
+                pass
     alert_text = f"{title}\n{status}\n{time_info}"
     cb = _task_open_callback(task_type, row_id)
     if cb and is_active:
