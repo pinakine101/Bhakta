@@ -439,7 +439,11 @@ async def tasks_today(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 async def t3_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
-    await query.answer()
+    print(f"[T3] callback data: {query.data}", flush=True)
+    try:
+        await query.answer()
+    except Exception as e:
+        print(f"[T3] answer error: {e}", flush=True)
     uid = query.from_user.id
     data = query.data
     parts = data.split(":")
