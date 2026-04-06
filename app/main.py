@@ -148,9 +148,7 @@ async def task_info_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not match:
         return
     row_id = int(match.group(1))
-    print(f"[task_info] row_id={row_id}, uid={query.from_user.id}", flush=True)
     row = await repo.get_scheduled_task_by_id(row_id)
-    print(f"[task_info] row={row}", flush=True)
     if not row:
         await query.message.reply_text("Задание не найдено.")
         return
