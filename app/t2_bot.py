@@ -79,7 +79,7 @@ class T2State:
             t.cancel()
 
 
-from app import t2_state
+t2_state = T2State()
 
 
 async def _cancel_timer_safe(t: asyncio.Task | None) -> None:

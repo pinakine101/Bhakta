@@ -39,8 +39,6 @@ from app.services.schedule_loader import (
     t2_assignment_for_calendar_day,
 )
 
-from app import t1_state
-
 
 @dataclass
 class T1State:

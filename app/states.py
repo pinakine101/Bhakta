@@ -1,4 +1,3 @@
-# Package marker.
 from app.t1_bot import T1State
 from app.t2_bot import T2State
 
