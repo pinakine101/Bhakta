@@ -127,14 +127,14 @@ def register_t1_handlers(app: Application, _repo: Repository, _settings: Setting
 async def _t1_callback_base(update: Update, row_id: int) -> dict | None:
     """Fetch task row and validate. Returns row dict or None."""
     query = update.callback_query
-    await query.answer()
     uid = update.effective_user.id
     row = await repo.get_scheduled_task_by_id(row_id)
     if not row or row["user_id"] != uid:
+        await query.answer()
         await query.message.reply_text("Задание не найдено", reply_markup=ReplyKeyboardRemove())
         return None
     if row["completed"] or row["skipped"]:
-        await query.answer("Уже обработано")
+        await query.answer("Уже обработано", show_alert=True)
         return None
     ws = str(row.get("window_start") or "")
     we = str(row.get("window_end") or "")
@@ -145,6 +145,7 @@ async def _t1_callback_base(update: Update, row_id: int) -> dict | None:
     if now_iso > we:
         await query.answer("Окно задания закончилось — задание удалено.", show_alert=True)
         return None
+    await query.answer()
     return row
 
 
