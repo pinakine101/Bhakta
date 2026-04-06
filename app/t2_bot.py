@@ -79,9 +79,6 @@ class T2State:
             t.cancel()
 
 
-t2_state = T2State()
-
-
 async def _cancel_timer_safe(t: asyncio.Task | None) -> None:
     if t is None:
         return
@@ -390,8 +387,8 @@ async def _t2_callback_d(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     actual = int((datetime.now(timezone.utc) - ctx[1]).total_seconds())
     if actual < 0:
         actual = 0
-    t2_state.pending[uid] = T2Pending(row_id=row_id, step="art_sents", art_seconds=actual)
-    await query.message.reply_text("Напиши 2–3 предложения о том, что чувствуешь, что заметил.", reply_markup=ReplyKeyboardRemove())
+    t2_state.pending[uid] = T2Pending(row_id=row_id, step="art_word", art_seconds=actual)
+    await query.message.reply_text("Напиши одно слово — итог.", reply_markup=ReplyKeyboardRemove())
     await query.answer()
 
 
@@ -482,22 +479,13 @@ async def _t2_text_flow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     lib_task_id = str(int(row["task_id"])) if row.get("task_id") is not None else "0"
     now_s = datetime.now().isoformat(sep=" ", timespec="seconds")
 
-    if pend.step == "art_sents":
-        if len(raw) < 15:
-            await message.reply_text("Напиши чуть развёрнутее (хотя бы пара предложений).")
-            return
-        pend.response_draft = raw
-        pend.step = "art_word"
-        await message.reply_text("Напиши одно слово — итог.")
-        return
-
     if pend.step == "art_word":
-        if not pend.response_draft or len(raw) > 50 or " " in raw.strip():
+        if len(raw) > 50 or " " in raw.strip():
             await message.reply_text("Одно слово, до 50 символов.")
             return
         actual = pend.art_seconds or 0
         await repo.complete_t2_task(
-            pend.row_id, word=raw, response=pend.response_draft,
+            pend.row_id, word=raw, response=None,
             completed_at=now_s, actual_duration_sec=actual, selected_image_id=None,
         )
         await repo.save_user_word(uid, raw, "T2", lib_task_id, ag)
