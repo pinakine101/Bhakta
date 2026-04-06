@@ -29,6 +29,8 @@ from app.services.schedule_loader import (
 from app.services.t1_runtime import local_window_to_utc_iso, resolve_tz_name
 from app.services.t2_media import art_image_path, choice_image_path
 
+from app.states import t2_state, T2State, T2Pending
+
 repo: Repository = None  # set by register_t2_handlers
 settings: Settings = None  # set by register_t2_handlers
 
@@ -53,30 +55,7 @@ def _window_status(window_start_iso: str, window_end_iso: str) -> str:
         return "not_started"
     if now > window_end_iso:
         return "ended"
-    return "open"
-
-
-@dataclass
-class T2Pending:
-    row_id: int
-    step: str
-    art_seconds: int | None = None
-    response_draft: str | None = None
-    selected_image_id: int | None = None
-
-
-@dataclass
-class T2State:
-    pending: dict[int, T2Pending] = field(default_factory=dict)
-    art_session: dict[int, tuple[int, datetime]] = field(default_factory=dict)
-    art_timers: dict[int, asyncio.Task] = field(default_factory=dict)
-
-    def clear_user(self, user_id: int) -> None:
-        self.pending.pop(user_id, None)
-        self.art_session.pop(user_id, None)
-        t = self.art_timers.pop(user_id, None)
-        if t is not None:
-            t.cancel()
+        return "open"
 
 
 async def _cancel_timer_safe(t: asyncio.Task | None) -> None:

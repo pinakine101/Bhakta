@@ -41,13 +41,13 @@ from app.services.schedule_loader import (
 )
 from app.services.word_analysis import build_default_word_dict_rows
 from app.services.zodiac import get_age_group, get_zodiac_and_element
-from app.t1_bot import T1State, register_t1_handlers, t1_background_loop
+from app.t1_bot import register_t1_handlers, t1_background_loop
 from app.t1_bot import _create_daily_tasks
 from app.t1_bot import _t1_morning_word_message, _t1_evening_word_message
-from app.t2_bot import T2State, register_t2_handlers
+from app.t2_bot import register_t2_handlers
 from app.t2_bot import _t2_text_flow
 
-from app.states import t1_state, t2_state
+from app.states import t1_state, t2_state, T1State, T2State
 
 _t1_state = t1_state
 _t2_state = t2_state
