@@ -7,4 +7,5 @@ services:
       - BOT_TOKEN=${BOT_TOKEN}
       - WEBHOOK_URL=${WEBHOOK_URL}
       - PORT=8080
+      - SKIP_TIME_CHECK=1
     restart: unless-stopped

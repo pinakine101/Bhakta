@@ -139,12 +139,15 @@ async def _t1_callback_base(update: Update, row_id: int) -> dict | None:
     ws = str(row.get("window_start") or "")
     we = str(row.get("window_end") or "")
     now_iso = _now_utc_iso()
-    if now_iso < ws:
-        await query.answer("Дождитесь временного окна", show_alert=True)
-        return None
-    if now_iso > we:
-        await query.answer("Окно задания закончилось — задание удалено.", show_alert=True)
-        return None
+    # DEBUG: Skip time window check
+    import os
+    if not os.environ.get("SKIP_TIME_CHECK"):
+        if now_iso < ws:
+            await query.answer("Дождитесь временного окна", show_alert=True)
+            return None
+        if now_iso > we:
+            await query.answer("Окно задания закончилось — задание удалено.", show_alert=True)
+            return None
     await query.answer()
     return row
 
