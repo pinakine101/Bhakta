@@ -128,7 +128,9 @@ async def _t1_callback_base(update: Update, row_id: int) -> dict | None:
     """Fetch task row and validate. Returns row dict or None."""
     query = update.callback_query
     uid = update.effective_user.id
+    print(f"[T1_DEBUG] row_id={row_id}, uid={uid}", flush=True)
     row = await repo.get_scheduled_task_by_id(row_id)
+    print(f"[T1_DEBUG] row={row}", flush=True)
     if not row or row["user_id"] != uid:
         await query.answer()
         await query.message.reply_text("Задание не найдено", reply_markup=ReplyKeyboardRemove())
