@@ -62,7 +62,9 @@ def _is_valid_birth_date(raw_value: str) -> bool:
         return False
 
 load_dotenv()
-DB_PATH = os.path.join(os.getcwd(), "cont_bot.sqlite3")
+DATA_DIR = os.path.join(os.getcwd(), "data")
+os.makedirs(DATA_DIR, exist_ok=True)
+DB_PATH = os.path.join(DATA_DIR, "cont_bot.sqlite3")
 TASKS_TODAY = "tasks:today"
 
 settings = get_settings()
