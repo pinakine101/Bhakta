@@ -42,26 +42,6 @@ from app.services.schedule_loader import (
 from app.states import t1_state
 
 
-@dataclass
-class T1State:
-    """Состояние сессий Т1 в памяти процесса."""
-
-    morning_start: dict[int, tuple[int, datetime, int]] = field(default_factory=dict)
-    evening_timers: dict[int, asyncio.Task] = field(default_factory=dict)
-    evening_phase: dict[int, int] = field(default_factory=dict)
-    pending_evening_word: dict[int, int] = field(default_factory=dict)
-    pending_morning_word: dict[int, dict] = field(default_factory=dict)
-
-    def clear_user(self, user_id: int) -> None:
-        self.morning_start.pop(user_id, None)
-        self.evening_phase.pop(user_id, None)
-        self.pending_evening_word.pop(user_id, None)
-        self.pending_morning_word.pop(user_id, None)
-        t = self.evening_timers.pop(user_id, None)
-        if t is not None:
-            t.cancel()
-
-
 def continue_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text="Продолжить", callback_data="tasks:today")]]
