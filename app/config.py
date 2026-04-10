@@ -6,9 +6,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-print(f"[DEBUG] BOT_TOKEN from env: {os.getenv('BOT_TOKEN', 'NOT SET')}", flush=True)
-print(f"[DEBUG] PTB init will start soon...", flush=True)
-
 
 @dataclass(frozen=True)
 class Settings:
