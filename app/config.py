@@ -6,6 +6,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+print(f"[DEBUG] BOT_TOKEN from env: {os.getenv('BOT_TOKEN', 'NOT SET')}", flush=True)
+print(f"[DEBUG] All env vars: {dict(os.environ)}", flush=True)
+
 
 @dataclass(frozen=True)
 class Settings:
