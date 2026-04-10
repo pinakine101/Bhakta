@@ -4,7 +4,7 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - BOT_TOKEN=${BOT_TOKEN}
+      - BOT_TOKEN=8768806445:AAF9_pdz5Gx23wmZH87GEdlZ8pXP4hzgQB4
       - WEBHOOK_URL=https://pinakine101-bhakta-bcd5.twc1.net
       - PORT=8080
       - SKIP_TIME_CHECK=1
