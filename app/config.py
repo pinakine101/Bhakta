@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 import os
-import sys
 
 from dotenv import load_dotenv
 
@@ -8,14 +7,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 print(f"[DEBUG] BOT_TOKEN from env: {os.getenv('BOT_TOKEN', 'NOT SET')}", flush=True)
-
-# Test Telegram API connectivity
-import requests
-try:
-    r = requests.get("https://api.telegram.org/", timeout=5)
-    print(f"[DEBUG] Telegram API reachable: {r.status_code}", flush=True)
-except Exception as e:
-    print(f"[DEBUG] Telegram API error: {e}", flush=True, file=sys.stderr)
+print(f"[DEBUG] PTB init will start soon...", flush=True)
 
 
 @dataclass(frozen=True)
