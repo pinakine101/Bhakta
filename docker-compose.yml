@@ -1,11 +1,12 @@
 services:
   app:
     build: .
-    ports:
-      - "8080:8080"
+    network_mode: bridge
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     environment:
-      - BOT_TOKEN=${BOT_TOKEN}
-      - WEBHOOK_URL=${WEBHOOK_URL}
+      - BOT_TOKEN=8768806445:AAF9_pdz5Gx23wmZH87GEdlZ8pXP4hzgQB4
       - PORT=8080
       - SKIP_TIME_CHECK=1
     restart: unless-stopped

@@ -21,6 +21,7 @@ from telegram import (
     ReplyKeyboardRemove,
     Update,
 )
+from telegram import request as telegram_request
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -831,7 +832,15 @@ def main() -> None:
     repo = Repository(DB_PATH)
     asyncio.run(repo.seed_word_dictionary(build_default_word_dict_rows()))
 
-    application = Application.builder().token(settings.bot_token).build()
+    request_kwargs = {}
+    proxy = os.environ.get("HTTP_PROXY") or os.environ.get("http_proxy")
+    if proxy:
+        request_kwargs["proxy"] = proxy
+        print(f"[BOOT] Using proxy: {proxy}", flush=True, file=sys.stderr)
+
+    application = Application.builder().token(settings.bot_token).request(
+        telegram_request.HTTPXRequest(**request_kwargs)
+    ).build()
 
     application.add_handler(CommandHandler("start", start_cmd))
     application.add_handler(CommandHandler("help", help_cmd))
