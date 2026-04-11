@@ -7,7 +7,7 @@ build:
   requirementsPath: requirements.txt
   useCache: false
 run:
-  command: python -m app.main
+  command: python /app/app/main.py
   persistenceMount: /data
   containerPort: "80"
   servicePort: "80"
