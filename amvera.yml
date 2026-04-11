@@ -5,7 +5,7 @@ meta:
     version: "3.11"
 build:
   requirementsPath: requirements.txt
-  useCache: true
+  useCache: false
 run:
   command: python -m app.main
   persistenceMount: /data
