@@ -793,10 +793,24 @@ async def on_shutdown(app: web.Application) -> None:
 
 async def _run_polling() -> None:
     global background_task
+    import sys
+    import traceback
+    sys.stderr.write(f"[POLLING] Starting with application={application}\n")
     if application:
-        await application.initialize()
-        await application.start()
-        background_task = asyncio.create_task(t1_background_loop(application.bot, repo, settings))
+        try:
+            sys.stderr.write("[POLLING] Calling initialize()\n")
+            await application.initialize()
+            sys.stderr.write("[POLLING] initialize() completed\n")
+            sys.stderr.write("[POLLING] Calling start()\n")
+            await application.start()
+            sys.stderr.write("[POLLING] start() completed\n")
+            sys.stderr.write("[POLLING] Creating background task\n")
+            background_task = asyncio.create_task(t1_background_loop(application.bot, repo, settings))
+            sys.stderr.write("[POLLING] Background task created\n")
+        except Exception as e:
+            sys.stderr.write(f"[POLLING] ERROR: {e}\n")
+            sys.stderr.write(traceback.format_exc())
+            return
         print("[BOOT] Background task started", flush=True, file=sys.stderr)
         stop_event = asyncio.Event()
         try:
@@ -867,7 +881,7 @@ def main() -> None:
         web.run_app(app, host="0.0.0.0", port=port, print=None)
     else:
         print("[BOOT] Starting polling mode", flush=True, file=sys.stderr)
-        asyncio.run(_run_polling())
+        asyncio.run(application.run_polling())
 
 
 if __name__ == "__main__":
