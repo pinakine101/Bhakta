@@ -7,7 +7,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-ENV BOT_TOKEN=8768806445:AAF9_pdz5Gx23wmZH87GEdlZ8pXP4hzgQB4
-ENV TIMEZONE=Europe/Moscow
+ENV PORT=80
+EXPOSE 80
 
 CMD ["python", "-m", "app.main"]
